@@ -158,24 +158,6 @@ def get_order_block(symbol: str, granularity: str, day: int) -> OrderBlockResult
     )
 
 
-def _patch_requests():
-    import requests
-    import functools
-    __init__ = requests.sessions.Session.__init__
-
-    @functools.wraps(__init__)
-    def _init(self: requests.sessions.Session):
-        __init__(self)
-        self.proxies.update({
-            'http': 'http://localhost:7890',
-            'https': 'http://localhost:7890',
-        })
-
-    requests.sessions.Session.__init__ = _init
-
-
-_patch_requests()
-
 if __name__ == '__main__':
     r = get_order_block("BTCUSDT", day=3, granularity="30m")
     for od in r.tested_order_blocks:
