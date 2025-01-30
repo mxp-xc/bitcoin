@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>订单块查询</title>
+    <script src="https://ajax.aspnetcdn.com/ajax/jquery/jquery-3.5.1.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        .container {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .condition-box {
+            margin-bottom: 20px;
+        }
+
+        .data-area {
+            border: 1px solid #ccc;
+            padding: 10px;
+            min-height: 200px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="condition-box">
+        <label for="symbol">币种：</label>
+        <input type="text" id="symbol" name="symbol" value="{{ filter.symbol }}">
+        <label for="granularity">级别：</label>
+        <select id="granularity">
+            {% for granularity in filter.granularity_list %}
+            <option value="{{ granularity.value }}" {% if granularity.selected %} selected {% endif %}>
+                {{ granularity.label }}
+            </option>
+            {% endfor %}
+        </select>
+        <label for="day">时间跨度：</label>
+        <select id="day">
+            {% for day in filter.day_list %}
+            <option value="{{ day.value }}" {% if day.selected %} selected {% endif %}>
+                {{ day.label }}
+            </option>
+            {% endfor %}
+        </select>
+        <button onclick="fetchData()">查询</button>
+    </div>
+    数据来自bitget平台
+    <div class="data-area">
+        <span style="color: green">未被测试订单块</span>
+        <table id="ob">
+            <thead>
+            <tr>
+                <th>方向</th>
+                <th>所在k线</th>
+                <th>价格范围(下影线 - 上影线)</th>
+            </tr>
+            </thead>
+            <tbody id="ob-body">
+            </tbody>
+        </table>
+    </div>
+    <div class="data-area" style="margin-top: 20px">
+        <span style="color: red">已被测试订单块</span>
+        <table id="tested-ob">
+            <thead>
+            <tr>
+                <th>方向</th>
+                <th>所在k线</th>
+                <th>价格范围(下影线 - 上影线)</th>
+                <th>被第一次测试所在的k线</th>
+            </tr>
+            </thead>
+            <tbody id="tested-ob-body">
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    function getDirection(ob) {
+        return ob.direction == "up" ? "多" : "空"
+    }
+
+    function getPriceRange(ob) {
+        const kline = ob.klines[0];
+        return `[${kline.lowest_price} - ${kline.highest_price}]`
+    }
+
+    function onSuccess(data) {
+        const tbody = document.getElementById('ob-body');
+        tbody.innerHTML = '';
+        data.order_blocks.forEach(function (ob) {
+            const row = '<tr>' +
+                '<td>' + getDirection(ob) + '</td>' +
+                '<td>' + ob.klines[0].opening_time + '</td>' +
+                '<td>' + getPriceRange(ob) + '</td>' +
+                '</tr>';
+            tbody.innerHTML += row;
+        });
+
+        const testedBody = document.getElementById('tested-ob-body');
+        testedBody.innerHTML = '';
+        data.tested_order_blocks.forEach(function (ob) {
+            const row = '<tr>' +
+                '<td>' + getDirection(ob) + '</td>' +
+                '<td>' + ob.klines[0].opening_time + '</td>' +
+                '<td>' + getPriceRange(ob) + '</td>' +
+                '<td>' + ob.first_test_kline.opening_time + '</td>' +
+                '</tr>';
+            testedBody.innerHTML += row;
+        });
+    }
+
+    function fetchData() {
+        const symbol = document.getElementById('symbol').value;
+        const granularity = document.getElementById('granularity').value;
+        const day = document.getElementById('day').value;
+
+        $.ajax({
+            url: '/get_order_block',
+            data: JSON.stringify({
+                symbol,
+                granularity,
+                day
+            }),
+            contentType: 'application/json',
+            type: 'POST',
+            success: data => {
+                if (data.success) {
+                    onSuccess(data.data)
+                } else {
+                    alert(data.message)
+                }
+            },
+            error: function () {
+                alert('加载数据失败');
+            }
+        });
+    }
+</script>
+</body>
+</html>
