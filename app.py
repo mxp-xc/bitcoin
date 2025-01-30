@@ -75,4 +75,4 @@ def get_order_block(param: OrderBlockQuery) -> Result[OrderBlockResult]:
 if __name__ == '__main__':
     import uvicorn
 
-    uvicorn.run("app:app", reload=True, use_colors=True)
+    uvicorn.run("app:app", host="0.0.0.0", port=18293, use_colors=True)

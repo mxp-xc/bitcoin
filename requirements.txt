@@ -3,3 +3,4 @@ requests
 fastapi
 uvicorn
 pycryptodome
+jinja2
