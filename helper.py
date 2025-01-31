@@ -152,6 +152,14 @@ def get_order_block(symbol: str, granularity: str, day: int) -> OrderBlockResult
             direction = None
             new_order_block = None
 
+    if ob_kline:
+        new_order_block = OrderBlock(
+            time_unit=granularity,
+            klines=[*ob_kline, k1, k2],  # noqa
+            direction=direction
+        )
+        order_block_map[new_order_block.start_datetime] = new_order_block
+
     return OrderBlockResult(
         order_blocks=sorted(order_block_map.values(), key=lambda ob_: ob_.start_datetime),
         tested_order_blocks=sorted(tested_order_blocks, key=lambda ob_: ob_.start_datetime)
