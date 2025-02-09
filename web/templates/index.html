@@ -70,6 +70,7 @@
                 <th>方向</th>
                 <th>所在k线</th>
                 <th>价格范围(下影线 - 上影线)</th>
+                <th>价差</th>
                 <th>价格中位数</th>
                 <th>fvg缺口</th>
             </tr>
@@ -86,6 +87,7 @@
                 <th>方向</th>
                 <th>所在k线</th>
                 <th>价格范围(下影线 - 上影线)</th>
+                <th>价差</th>
                 <th>价格中位数</th>
                 <th>fvg缺口</th>
                 <th>被测试的k线</th>
@@ -105,6 +107,12 @@
     function getPriceRange(ob) {
         const kline = ob.klines[0];
         return `[${kline.lowest_price} - ${kline.highest_price}]`
+    }
+
+    function getPriceDelta(ob) {
+        const kline = ob.klines[0];
+        const result =  Math.abs(kline.lowest_price - kline.highest_price)
+        return Math.trunc(result * 100) / 100
     }
 
     function getFvg(ob) {
@@ -133,6 +141,7 @@
                 '<td>' + getDirection(ob) + '</td>' +
                 '<td>' + ob.klines[0].opening_time + '</td>' +
                 '<td>' + getPriceRange(ob) + '</td>' +
+                '<td>' + getPriceDelta(ob) + '</td>' +
                 '<td>' + getCenterPrice(ob) + '</td>' +
                 '<td>' + getFvg(ob) + '</td>' +
                 '</tr>';
@@ -146,6 +155,7 @@
                 '<td>' + getDirection(ob) + '</td>' +
                 '<td>' + ob.klines[0].opening_time + '</td>' +
                 '<td>' + getPriceRange(ob) + '</td>' +
+                '<td>' + getPriceDelta(ob) + '</td>' +
                 '<td>' + getCenterPrice(ob) + '</td>' +
                 '<td>' + getFvg(ob) + '</td>' +
                 '<td>' + ob.first_test_kline.opening_time + '</td>' +
