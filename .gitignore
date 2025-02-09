@@ -3,3 +3,4 @@ __pycache__
 .idea
 _settings.py
 _dev.py
+test.py

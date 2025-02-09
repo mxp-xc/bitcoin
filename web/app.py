@@ -6,7 +6,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from datastruct import Result
-from helper import get_order_block as gob, OrderBlockResult
+from helper import OrderBlockResult, get_klines, OrderBlockParser
 
 app = FastAPI()
 
@@ -63,13 +63,24 @@ class OrderBlockQuery(BaseModel):
 
 
 @app.exception_handler(Exception)
-def handle_exception(request: Request, exc: Exception):
+def handle_exception(request: Request, exc: Exception):  # noqa
     return ORJSONResponse(content=Result.failed(str(exc)).model_dump(mode="json"))
 
 
 @app.post("/get_order_block")
 def get_order_block(param: OrderBlockQuery) -> Result[OrderBlockResult]:
-    return Result.of(gob(symbol=param.symbol, granularity=param.granularity, day=param.day))
+    parser = OrderBlockParser()
+    for kline in get_klines(
+            symbol=param.symbol,
+            granularity=param.granularity,
+            day=param.day
+    )[:-1]:
+        parser.fetch(kline)
+
+    return Result.of(OrderBlockResult(
+        order_blocks=list(parser.order_blocks.values()),
+        tested_order_blocks=sorted(parser.tested_order_blocks, key=lambda ob_: ob_.start_datetime)
+    ))
 
 
 if __name__ == '__main__':

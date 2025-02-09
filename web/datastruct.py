@@ -6,7 +6,7 @@ from pydantic import BaseModel
 T = TypeVar("T")
 
 
-class Result(Generic[T], BaseModel):
+class Result(BaseModel, Generic[T]):
     success: bool
     data: T | None
     message: str
