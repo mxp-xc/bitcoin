@@ -70,6 +70,8 @@
                 <th>方向</th>
                 <th>所在k线</th>
                 <th>价格范围(下影线 - 上影线)</th>
+                <th>价格中位数</th>
+                <th>fvg缺口</th>
             </tr>
             </thead>
             <tbody id="ob-body">
@@ -84,7 +86,9 @@
                 <th>方向</th>
                 <th>所在k线</th>
                 <th>价格范围(下影线 - 上影线)</th>
-                <th>被第一次测试所在的k线</th>
+                <th>价格中位数</th>
+                <th>fvg缺口</th>
+                <th>被测试的k线</th>
             </tr>
             </thead>
             <tbody id="tested-ob-body">
@@ -103,6 +107,23 @@
         return `[${kline.lowest_price} - ${kline.highest_price}]`
     }
 
+    function getFvg(ob) {
+        let h, l;
+        if (ob.direction == "up") {
+            h = ob.klines[2].lowest_price
+            l = ob.klines[0].highest_price
+        } else {
+            h = ob.klines[0].lowest_price
+            l = ob.klines[2].highest_price
+        }
+        return Math.trunc((h - l) * 100) / 100
+    }
+
+    function getCenterPrice(ob) {
+        const kline = ob.klines[0];
+        return (kline.lowest_price + kline.highest_price) / 2
+    }
+
     function onSuccess(data) {
         const tbody = document.getElementById('ob-body');
         tbody.innerHTML = '';
@@ -111,6 +132,8 @@
                 '<td>' + getDirection(ob) + '</td>' +
                 '<td>' + ob.klines[0].opening_time + '</td>' +
                 '<td>' + getPriceRange(ob) + '</td>' +
+                '<td>' + getCenterPrice(ob) + '</td>' +
+                '<td>' + getFvg(ob) + '</td>' +
                 '</tr>';
             tbody.innerHTML += row;
         });
@@ -122,6 +145,8 @@
                 '<td>' + getDirection(ob) + '</td>' +
                 '<td>' + ob.klines[0].opening_time + '</td>' +
                 '<td>' + getPriceRange(ob) + '</td>' +
+                '<td>' + getCenterPrice(ob) + '</td>' +
+                '<td>' + getFvg(ob) + '</td>' +
                 '<td>' + ob.first_test_kline.opening_time + '</td>' +
                 '</tr>';
             testedBody.innerHTML += row;
