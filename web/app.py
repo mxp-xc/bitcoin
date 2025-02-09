@@ -5,8 +5,8 @@ from fastapi.responses import HTMLResponse, ORJSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from datastruct import Result
 from helper import OrderBlockResult, get_klines, OrderBlockParser
+from web.datastruct import Result
 
 app = FastAPI()
 
@@ -81,9 +81,3 @@ def get_order_block(param: OrderBlockQuery) -> Result[OrderBlockResult]:
         order_blocks=list(parser.order_blocks.values()),
         tested_order_blocks=sorted(parser.tested_order_blocks, key=lambda ob_: ob_.start_datetime)
     ))
-
-
-if __name__ == '__main__':
-    import uvicorn
-
-    uvicorn.run("app:app", host="0.0.0.0", port=18293, use_colors=True)
