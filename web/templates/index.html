@@ -121,7 +121,8 @@
 
     function getCenterPrice(ob) {
         const kline = ob.klines[0];
-        return (kline.lowest_price + kline.highest_price) / 2
+        const result = (kline.lowest_price + kline.highest_price) / 2
+        return Math.trunc(result * 100) / 100
     }
 
     function onSuccess(data) {
