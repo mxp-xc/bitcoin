@@ -1,7 +1,7 @@
-pydantic
-requests
 fastapi
 uvicorn
-pycryptodome
 jinja2
 orjson
+ccxt
+pydantic
+loguru

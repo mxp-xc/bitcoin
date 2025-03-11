@@ -3,4 +3,5 @@ __pycache__
 .idea
 _settings.py
 _dev.py
-test.py
+test*.py
+identifier.sqlite

@@ -43,11 +43,11 @@
     <div class="condition-box">
         <label for="symbol">币种：</label>
         <input type="text" id="symbol" name="symbol" value="{{ filter.symbol }}">
-        <label for="granularity">级别：</label>
-        <select id="granularity">
-            {% for granularity in filter.granularity_list %}
-            <option value="{{ granularity.value }}" {% if granularity.selected %} selected {% endif %}>
-                {{ granularity.label }}
+        <label for="timeframe">级别：</label>
+        <select id="timeframe">
+            {% for timeframe in filter.timeframe_list %}
+            <option value="{{ timeframe.value }}" {% if timeframe.selected %} selected {% endif %}>
+                {{ timeframe.label }}
             </option>
             {% endfor %}
         </select>
@@ -100,8 +100,8 @@
 </div>
 
 <script>
-    function getDirection(ob) {
-        return ob.direction == "up" ? "多" : "空"
+    function getSide(ob) {
+        return ob.side == "long" ? "多" : "空"
     }
 
     function getPriceRange(ob) {
@@ -117,7 +117,7 @@
 
     function getFvg(ob) {
         let h, l;
-        if (ob.direction == "up") {
+        if (ob.side == "long") {
             h = ob.klines[2].lowest_price
             l = ob.klines[0].highest_price
         } else {
@@ -138,7 +138,7 @@
         tbody.innerHTML = '';
         data.order_blocks.forEach(function (ob) {
             const row = '<tr>' +
-                '<td>' + getDirection(ob) + '</td>' +
+                '<td>' + getSide(ob) + '</td>' +
                 '<td>' + ob.klines[0].opening_time + '</td>' +
                 '<td>' + getPriceRange(ob) + '</td>' +
                 '<td>' + getPriceDelta(ob) + '</td>' +
@@ -152,7 +152,7 @@
         testedBody.innerHTML = '';
         data.tested_order_blocks.forEach(function (ob) {
             const row = '<tr>' +
-                '<td>' + getDirection(ob) + '</td>' +
+                '<td>' + getSide(ob) + '</td>' +
                 '<td>' + ob.klines[0].opening_time + '</td>' +
                 '<td>' + getPriceRange(ob) + '</td>' +
                 '<td>' + getPriceDelta(ob) + '</td>' +
@@ -166,14 +166,14 @@
 
     function fetchData() {
         const symbol = document.getElementById('symbol').value;
-        const granularity = document.getElementById('granularity').value;
+        const timeframe = document.getElementById('timeframe').value;
         const day = document.getElementById('day').value;
 
         $.ajax({
             url: '/get_order_block',
             data: JSON.stringify({
                 symbol,
-                granularity,
+                timeframe,
                 day
             }),
             contentType: 'application/json',

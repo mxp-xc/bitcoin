@@ -1,11 +1,15 @@
 # -*- coding: utf-8 -*-
+import datetime
+
 from fastapi import FastAPI
 from fastapi.requests import Request
 from fastapi.responses import HTMLResponse, ORJSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from helper import OrderBlockResult, get_klines, OrderBlockParser
+from conf import settings
+from trading.helper import OrderBlockParser, OrderBlockResult
+from trading.schema.base import KLine
 from web.datastruct import Result
 
 app = FastAPI()
@@ -19,7 +23,7 @@ def index(request: Request) -> HTMLResponse:
         "request": request,
         "filter": {
             "symbol": "BTCUSDT",
-            "granularity_list": [
+            "timeframe_list": [
                 {
                     "label": "30分",
                     "value": "30m",
@@ -58,7 +62,7 @@ def index(request: Request) -> HTMLResponse:
 
 class OrderBlockQuery(BaseModel):
     day: int
-    granularity: str
+    timeframe: str
     symbol: str
 
 
@@ -68,18 +72,25 @@ def handle_exception(request: Request, exc: Exception):  # noqa
 
 
 @app.post("/get_order_block")
-def get_order_block(param: OrderBlockQuery) -> Result[OrderBlockResult]:
-    parser = OrderBlockParser()
-    for kline in get_klines(
+async def get_order_block(param: OrderBlockQuery) -> Result[OrderBlockResult]:
+    parser = OrderBlockParser(param.timeframe)
+    async with settings.create_async_exchange() as exchange:
+        ohlcv = await exchange.fetch_ohlcv(
             symbol=param.symbol,
-            granularity=param.granularity,
-            day=param.day
-    )[:-1]:
-        parser.fetch(kline)
+            timeframe=param.timeframe,
+            since=int((datetime.datetime.now() - datetime.timedelta(days=param.day)).timestamp() * 1000),
+            params={
+                "until": int(datetime.datetime.now().timestamp() * 1000)
+            },
+            limit=1000
+        )
+        for data in ohlcv:
+            kline = KLine.from_ccxt(data)
+            parser.fetch(kline)
 
     return Result.of(OrderBlockResult(
         order_blocks=list(parser.order_blocks.values()),
-        tested_order_blocks=sorted(parser.tested_order_blocks, key=lambda ob_: ob_.start_datetime)
+        tested_order_blocks=sorted(parser.tested_order_blocks.values(), key=lambda ob_: ob_.start_datetime)
     ))
 
 
