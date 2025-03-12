@@ -4,6 +4,7 @@ import datetime
 import uuid
 from typing import Literal, Annotated, TYPE_CHECKING
 
+from ccxt.base.errors import ExchangeError
 from ccxt.base.types import Position, OrderSide, Num
 from ccxt.pro import Exchange
 from loguru import logger
@@ -49,6 +50,12 @@ class PlaceOrderContext(BaseModel):
     )
 
 
+class RunnerOption(BaseModel):
+    symbol: str
+    timeframe: str
+    coin_size: float
+
+
 class Runner(object):
     def __init__(
         self,
@@ -59,45 +66,35 @@ class Runner(object):
         timeframe: str = "30m",
     ):
         self.timeframe = timeframe
-        self._coin_size = coin_size
-        self._symbol = symbol
-        self._product_type = product_type
+        self.coin_size = coin_size
+        self.symbol = symbol
+        self.product_type = product_type
         self.exchange = exchange
 
     async def run(self):
-        prepare_task = asyncio.create_task(self.exchange.watch_ohlcv(self._symbol, self.timeframe))
-        logger.info(f"获取合约账号信息({self._product_type})")
-        balances = await self.exchange.fetch_balance({
-            "type": "swap",
-            "productType": self._product_type
-        })
-        if self._product_type.startswith("S"):
-            balance = balances["SUSDT"]
-        else:
-            balance = balances["USDT"]
-        margin_coin = balances["info"][0]["marginCoin"]
-        logger.info(
-            f"当前账号可用({margin_coin}): {balance['free']}, "
-            f"已用: {balance['used']}, "
-            f"总计: {balance['total']}, "
-        )
+        while True:
+            try:
+                await self._run()
+            except Exception as exc:  # noqa: ignored
+                logger.exception(f"Failed to run for: {self.symbol}, {self.timeframe}")
+
+    async def _run(self):
+        prepare_task = asyncio.create_task(self.exchange.watch_ohlcv(self.symbol, self.timeframe))
 
         last_run_datetime = datetime.datetime.now()
-        await self.run_once()
+        await self._run_once()
 
         await prepare_task
         while True:
-            ohlcv = await self.exchange.watch_ohlcv(self._symbol, self.timeframe)
+            ohlcv = await self.exchange.watch_ohlcv(self.symbol, self.timeframe)
             kline = KLine.from_ccxt(ohlcv[-1])
             if kline.opening_time > last_run_datetime:
-                await self.run_once()
+                await self._run_once()
                 last_run_datetime = kline.opening_time
-            else:
-                print(f"\rwait: {kline}", end="")
 
     async def _get_klines(self) -> list[KLine]:
         ohlcv = await self.exchange.fetch_ohlcv(
-            symbol=self._symbol,
+            symbol=self.symbol,
             timeframe=self.timeframe,
             since=int((datetime.datetime.now() - datetime.timedelta(days=60)).timestamp() * 1000),
             params={
@@ -109,7 +106,7 @@ class Runner(object):
 
     async def _init_ob_parser(self):
         ob_parser = OrderBlockParser(timeframe=self.timeframe)
-        logger.info(f"读取`{self._symbol}`k线分析订单块中, 时间级别为: {self.timeframe}")
+        logger.info(f"读取`{self.symbol}`k线分析订单块中, 时间级别为: {self.timeframe}")
         klines = await self._get_klines()
         # dt = datetime.datetime.now().replace(hour=2, minute=7)
         # klines = list(filter(lambda k: k.opening_time <= dt, klines))
@@ -117,9 +114,8 @@ class Runner(object):
             ob_parser.fetch(kline)
         return ob_parser, klines
 
-    async def _get_position_map(self) -> dict[str, Position] | None:
-        """返回多空仓, 左边是多, 右边是空, 不存在则返回None"""
-        positions = await self.exchange.fetch_positions([self._symbol])
+    async def _get_position_map(self) -> dict[str, Position]:
+        positions = await self.exchange.fetch_positions([self.symbol])
         if not positions:
             return {}
         return {
@@ -129,10 +125,17 @@ class Runner(object):
 
     async def _cancel_all_orders(self):
         """撤销所有委托"""
+        orders = await self.exchange.fetch_open_orders(self.symbol)
+        if not orders:
+            return
         logger.info("准备撤销所有非持仓委托")
-        orders = await self.exchange.fetch_open_orders(self._symbol)
-        if orders:
-            await self.exchange.cancel_all_orders(self._symbol)
+
+        try:
+            await self.exchange.cancel_all_orders(self.symbol)
+        except ExchangeError as err:
+            if "No order to cancel" in str(err):
+                return
+            raise
         logger.info("撤销完成")
 
     async def _create_order(
@@ -150,16 +153,16 @@ class Runner(object):
         if preset_stop_loss_price:
             params["stopLoss"] = {"stopPrice": preset_stop_loss_price}
         await self.exchange.create_limit_order(
-            self._symbol,
+            self.symbol,
             side,
-            amount or self._coin_size,
+            amount or self.coin_size,
             price=price,
             params=params
         )
 
-    async def run_once(self):
+    async def _run_once(self):
         # 当前持仓数据
-        logger.info("run once")
+        logger.info(f"run once for {self.symbol}, {self.timeframe = }")
         await self._cancel_all_orders()
         position_map = await self._get_position_map()
         if 'short' in position_map and 'long' in position_map:
@@ -209,16 +212,67 @@ class Runner(object):
             )
 
 
+class RunnerManager(object):
+    def __init__(
+        self,
+        options: list[RunnerOption],
+        exchange: Exchange,
+        product_type: str
+    ):
+        self.product_type = product_type
+        self.exchange = exchange
+        self.options = options
+
+    def _build_runner(self, option: RunnerOption) -> Runner:
+        return Runner(
+            symbol=option.symbol,
+            product_type=self.product_type,
+            exchange=self.exchange,
+            timeframe=option.timeframe,
+            coin_size=option.coin_size
+        )
+
+    async def _get_account_info(self):
+        logger.info(f"获取合约账号信息({self.product_type})")
+        balances = await self.exchange.fetch_balance({
+            "type": "swap",
+            "productType": self.product_type
+        })
+        if self.product_type.startswith("S"):
+            balance = balances["SUSDT"]
+        else:
+            balance = balances["USDT"]
+        margin_coin = balances["info"][0]["marginCoin"]
+        logger.info(
+            f"当前账号可用({margin_coin}): {balance['free']}, "
+            f"已用: {balance['used']}, "
+            f"总计: {balance['total']}, "
+        )
+        return balance
+
+    async def run(self):
+        await self._get_account_info()
+        runners = [self._build_runner(option) for option in self.options]
+        await asyncio.gather(*(runner.run() for runner in runners))
+
+
 async def main():
     async with settings.create_async_exchange() as exchange:
         exchange.set_sandbox_mode(True)
-        runner = Runner(
-            symbol="SBTCSUSDT",
-            product_type="SUSDT-FUTURES",
-            timeframe="1m",
-            exchange=exchange
-        )
-        await runner.run()
+        options = [
+            RunnerOption(
+                symbol="SBTCSUSDT",
+                timeframe="30m",
+                coin_size=0.01
+            ),
+            RunnerOption(
+                symbol="SETHSUSDT",
+                timeframe="30m",
+                coin_size=0.5
+            )
+        ]
+        rm = RunnerManager(options, exchange, "SUSDT-FUTURES")
+        await rm.run()
 
 
 if __name__ == '__main__':
