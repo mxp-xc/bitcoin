@@ -77,6 +77,7 @@ class Runner(object):
                 await self._run()
             except Exception as exc:  # noqa: ignored
                 logger.exception(f"Failed to run for: {self.symbol}, {self.timeframe}")
+                await asyncio.sleep(3)
 
     async def _run(self):
         prepare_task = asyncio.create_task(self.exchange.watch_ohlcv(self.symbol, self.timeframe))
@@ -175,7 +176,7 @@ class Runner(object):
             logger.info("未发现订单块")
             return
 
-        last_kline = klines[-1]
+        # last_kline = klines[-1]
         # logger.info(f"订单块分析完成, 当前最新价格: {last_kline.closing_price}")
         # for ob in order_blocks.values():
         #     assert ob.side
