@@ -10,9 +10,9 @@ from .schema import ExchangeApiInfo
 
 
 class _Settings(BaseModel):
-    proxy_http_host: str | None = "localhost"
+    proxy_http_host: str | None = None
 
-    proxy_http_port: int | None = 7890
+    proxy_http_port: int | None = None
 
     def get_proxy_http_base_url(self, schema: str = "http") -> str | None:
         if not self.proxy_http_port and not self.proxy_http_host:
@@ -70,6 +70,7 @@ settings = _Settings()
 
 
 def __log_settings():
+    settings.api_info  # noqa: for dev
     proxy = settings.get_proxy_http_base_url()
     if proxy:
         logger.info(f"使用代理: {proxy}")
