@@ -1,12 +1,13 @@
 import asyncio
 import datetime
 from collections import OrderedDict
+from typing import Callable
 
 from loguru import logger
 from pydantic import BaseModel
 
-import utils
 from conf import settings
+from trading import utils
 from trading.schema.base import KLine, OrderBlock
 
 
@@ -34,6 +35,7 @@ class OrderBlockParser(object):
         self,
         timeframe: str,
         min_fvg: int = 0,
+        order_block_parser: Callable[[KLine, KLine, KLine], str] | None = None,
         merge: bool = False
     ):
         delta = self.granularity_map.get(timeframe)
@@ -44,6 +46,7 @@ class OrderBlockParser(object):
         self.granularity = timeframe
         self.order_blocks: OrderedDict[str, OrderBlock] = OrderedDict()
         self.tested_order_blocks: dict[str, OrderBlock] = OrderedDict()
+        self._order_block_parser = order_block_parser
         self._buffer: list[KLine] = []
         self._current_order_block: OrderBlock | None = None
 
@@ -116,7 +119,12 @@ class OrderBlockParser(object):
     def _test_order_block(self, order_block: OrderBlock, kline: KLine) -> bool:  # noqa
         return order_block.test(kline)
 
-    def _parse(self, k1: KLine, k2: KLine, k3: KLine):  # noqa
+    def _parse(self, k1: KLine, k2: KLine, k3: KLine):
+        if self._order_block_parser:
+            return self._order_block_parser(k1, k2, k3)
+        return self._default_parse(k1, k2, k3)
+
+    def _default_parse(self, k1: KLine, k2: KLine, k3: KLine):  # noqa
         if (
             k2.entity_highest_price >=
             k1.lowest_price >

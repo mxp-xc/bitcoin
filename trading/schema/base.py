@@ -2,10 +2,11 @@
 import datetime
 from typing import Literal
 
+from ccxt.base.types import PositionSide
 from pydantic import BaseModel, ConfigDict, AliasGenerator, PositiveInt, Field
 from pydantic.alias_generators import to_camel, to_snake
 
-import utils
+from trading import utils
 
 
 class ToCamelModel(BaseModel):
@@ -90,16 +91,20 @@ class KLine(BaseModel):
         )
 
     @property
+    def center_price(self):
+        return (self.lowest_price + self.highest_price) / 2
+
+    @property
+    def delta_price(self):
+        return self.highest_price - self.lowest_price
+
+    @property
     def entity_highest_price(self):
         return max(self.opening_price, self.closing_price)
 
     @property
     def entity_lowest_price(self):
         return min(self.opening_price, self.closing_price)
-
-    @property
-    def delta_price(self):
-        return self.highest_price - self.lowest_price
 
     def as_str_zh(self):
         return (
@@ -119,7 +124,7 @@ class KLine(BaseModel):
 
 
 class BaseOrderBlock(BaseModel):
-    side: str
+    side: PositionSide
 
 
 class OrderBlock(BaseOrderBlock):
@@ -135,10 +140,6 @@ class OrderBlock(BaseOrderBlock):
     @property
     def identity(self) -> str:
         return utils.format_datetime(self.start_datetime)
-
-    @property
-    def center_price(self):
-        return (self.klines[0].lowest_price + self.klines[0].highest_price) / 2
 
     @property
     def start_datetime(self):

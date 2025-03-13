@@ -2,13 +2,13 @@
 import asyncio
 import datetime
 import uuid
-from typing import Literal, Annotated, TYPE_CHECKING
+from typing import TYPE_CHECKING, Type
 
 from ccxt.base.errors import ExchangeError
 from ccxt.base.types import Position, OrderSide, Num
 from ccxt.pro import Exchange
 from loguru import logger
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, ConfigDict
 
 from conf import settings
 from trading.helper import OrderBlockParser
@@ -25,25 +25,20 @@ def _client_oid_default_factory() -> str:
 
 
 class OrderInfo(BaseModel):
-    size: str
-    side: Literal["buy", "sell"]
-    trade_side: Annotated[Literal["open"], Field(serialization_alias="tradeSide")]
-    preset_stop_surplus_price: Annotated[str | int, Field(serialization_alias="presetStopSurplusPrice")]
-    preset_stop_loss_price: Annotated[str | int, Field(serialization_alias="presetStopLossPrice")]
-    price: str
-    force: Literal["post_only", "gtc", "fok", "ioc"] | None = None
-    order_type: Annotated[Literal["limit", "market"], Field(serialization_alias="orderType")]
-    client_oid: Annotated[
-        str | None,
-        Field(serialization_alias="clientOid", default_factory=_client_oid_default_factory)
-    ]
-    reduce_only: Annotated[Literal["YES", "NO"] | None, Field(None, serialization_alias="reduceOnly")]
+    side: OrderSide
+    price: Num
+    amount: float | None = None
+    preset_stop_surplus_price: Num = None
+    preset_stop_loss_price: Num = None
+    # client_oid: Annotated[
+    #     str | None,
+    #     Field(serialization_alias="clientOid", default_factory=_client_oid_default_factory)
+    # ]
 
 
 class PlaceOrderContext(BaseModel):
-    order_block_parser: OrderBlockParser
-    symbol: str
-    product_type: str
+    order_blocks: list[OrderBlock]
+    mutex_order_blocs: list[OrderBlock]
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True
@@ -54,6 +49,7 @@ class RunnerOption(BaseModel):
     symbol: str
     timeframe: str
     coin_size: float
+    min_fvg: int = 0
 
 
 class Runner(object):
@@ -139,27 +135,66 @@ class Runner(object):
             raise
         logger.info("撤销完成")
 
-    async def _create_order(
-        self,
-        side: OrderSide,
-        price: Num,
-        amount: float | None = None,
-        preset_stop_surplus_price: Num = None,
-        preset_stop_loss_price: Num = None,
-    ):
+    async def _resolve_order_info(self, order_block: OrderBlock, context: PlaceOrderContext) -> OrderInfo:
+        side = order_block.side
+        kline = order_block.order_block_kline
+        if side == 'long':
+            # 做多订单块
+            price = kline.highest_price
+            preset_stop_surplus_price = kline.highest_price + kline.delta_price
+            preset_stop_loss_price = kline.lowest_price
+        else:
+            # 做空订单块
+            price = kline.lowest_price,
+            preset_stop_surplus_price = kline.lowest_price - kline.delta_price,
+            preset_stop_loss_price = kline.highest_price
+
+        return OrderInfo(
+            side="buy" if side == "long" else "sell",
+            price=price,
+            preset_stop_surplus_price=preset_stop_surplus_price,
+            preset_stop_loss_price=preset_stop_loss_price
+        )
+
+    async def _create_order0(self, order_info: OrderInfo):
         """下单"""
         params = {"tradeSide": "open"}
-        if preset_stop_surplus_price:
-            params["takeProfit"] = {"stopPrice": preset_stop_surplus_price}
-        if preset_stop_loss_price:
-            params["stopLoss"] = {"stopPrice": preset_stop_loss_price}
+        if order_info.preset_stop_surplus_price:
+            params["takeProfit"] = {"stopPrice": order_info.preset_stop_surplus_price}
+        if order_info.preset_stop_loss_price:
+            params["stopLoss"] = {"stopPrice": order_info.preset_stop_loss_price}
         await self.exchange.create_limit_order(
             self.symbol,
-            side,
-            amount or self.coin_size,
-            price=price,
+            order_info.side,
+            order_info.amount or self.coin_size,
+            price=order_info.price,
             params=params
         )
+
+    async def _create_order(
+        self,
+        order_blocks: list[OrderBlock],
+        mutex_order_blocs: list[OrderBlock]
+    ):
+        context = PlaceOrderContext(
+            order_blocks=order_blocks,
+            mutex_order_blocs=mutex_order_blocs
+        )
+        order_block = await self._choice_order_block(context)
+        if not order_block:
+            return
+
+        order_info = await self._resolve_order_info(order_block, context)
+        logger.info(f"{order_info = }")
+        await self._create_order0(order_info)
+
+    async def _choice_order_block(self, context: PlaceOrderContext) -> OrderBlock | None:  # noqa
+        if context.order_blocks:
+            return context.order_blocks[0]
+        return None
+
+    def _parse_order_block(self, order_block):
+        pass
 
     async def _run_once(self):
         # 当前持仓数据
@@ -192,25 +227,15 @@ class Runner(object):
         )
         if 'long' not in position_map and long_order_blocks:
             # 存在多单订单块并且没有多单持仓, 才下订单
-            last_order_block = long_order_blocks[0]
-            kline = last_order_block.order_block_kline
-            await self._create_order(
-                'buy',
-                kline.highest_price,
-                preset_stop_surplus_price=kline.highest_price + kline.delta_price,
-                preset_stop_loss_price=kline.lowest_price
-            )
+            await self._create_order(long_order_blocks, short_order_blocks)
 
         if 'short' not in position_map and short_order_blocks:
             # 存在空单订单块并且没有多单持仓, 才下订单
-            last_order_block = short_order_blocks[0]
-            kline = last_order_block.order_block_kline
-            await self._create_order(
-                'sell',
-                kline.lowest_price,
-                preset_stop_surplus_price=kline.lowest_price - kline.delta_price,
-                preset_stop_loss_price=kline.highest_price
-            )
+            await self._create_order(short_order_blocks, long_order_blocks)
+
+
+class CustomRunnerOptions(RunnerOption):
+    runner_class: Type[Runner]
 
 
 class RunnerManager(object):
@@ -225,7 +250,11 @@ class RunnerManager(object):
         self.options = options
 
     def _build_runner(self, option: RunnerOption) -> Runner:
-        return Runner(
+        if isinstance(option, CustomRunnerOptions):
+            runner_class = option.runner_class
+        else:
+            runner_class = Runner
+        return runner_class(
             symbol=option.symbol,
             product_type=self.product_type,
             exchange=self.exchange,
@@ -257,20 +286,111 @@ class RunnerManager(object):
         await asyncio.gather(*(runner.run() for runner in runners))
 
 
+class BTCRunner(Runner):
+    @staticmethod
+    def is_workday():
+        """是否是工作日"""
+        return datetime.datetime.now().isoweekday() <= 5
+
+    async def _choice_order_block(self, context: PlaceOrderContext) -> OrderBlock | None:
+        if not context.order_blocks:
+            return None
+        for order_block in context.order_blocks:
+            klines = order_block.klines
+            k1 = order_block.order_block_kline
+            if order_block.side == 'long':
+                # 多单, 除下影线
+                undulate = (k1.delta_price / k1.lowest_price) * 100
+            else:
+                # 多单, 除上影线
+                undulate = (k1.delta_price / k1.highest_price) * 100
+            if undulate <= 0.2 or undulate >= 1.5:
+                logger.info(f"[振幅: pass] {undulate} <= 0.2 or {undulate} >= 1.5. {k1}")
+                continue
+
+            k2 = klines[2]
+            if order_block.side == 'long':
+                fvg = k2.lowest_price - k1.highest_price
+            else:
+                fvg = k1.lowest_price - k2.highest_price
+            percent = (fvg / k1.highest_price) * 100
+            # fvg小于0.1的略过
+            if percent < 0.1:
+                logger.info(f"[fvg: pass] {percent} < 0.1. {k1}")
+                continue
+            return order_block
+        return None
+
+    async def _resolve_order_info(
+        self,
+        order_block: OrderBlock,
+        context: PlaceOrderContext
+    ) -> OrderInfo:
+        """
+        1. 无论工作日或者周末, 0.2%以下的订单块或者fvg < 0.1的不做
+        2. 工作日0.4~0.7的, 边缘入场, 0.7~1.5中轨入场. 止损边缘. 止盈为止损的1.5倍.  大于1.5不做
+        3. 周末, 0.4~0.7, 0.7~1.5入场规则和工作日一样. 止损多带0.2, 下单金额为止损总仓位5%的金额. 盈亏1:1
+        4. 工作日, 当fvg < 0.05%视为不存在fvg
+        """
+        kline = order_block.order_block_kline
+        if order_block.side == 'long':
+            # 多单, 除下影线
+            undulate = (kline.delta_price / kline.lowest_price) * 100
+        else:
+            # 空单, 除上影线
+            undulate = (kline.delta_price / kline.highest_price) * 100
+        # assert 0.4 < undulate < 1.5
+        if undulate > 0.7:
+            # 中轨
+            price = kline.center_price
+        elif order_block.side == 'long':
+            # 多上影线
+            price = kline.highest_price
+        else:
+            # 空上影线
+            price = kline.lowest_price
+
+        if order_block.side == 'long':
+            # 做多止损下影线
+            preset_stop_loss_price = kline.lowest_price
+            if self.is_workday():
+                # 工作日盈亏比1:1.5
+                preset_stop_surplus_price = price + 1.5 * (price - preset_stop_loss_price)
+            else:
+                # 周末需要多带0.2的止损
+                preset_stop_loss_price -= 0.2 * price
+                # 盈亏比1:1
+                preset_stop_surplus_price = price + preset_stop_loss_price
+        else:
+            # 做空止损上影线
+            preset_stop_loss_price = kline.highest_price
+            if self.is_workday():
+                # 非周末盈亏比1:1.5
+                preset_stop_surplus_price = price - 1.5 * (preset_stop_loss_price - price)
+            else:
+                # 周末需要多带0.2的止损
+                preset_stop_loss_price += 0.002 * price
+                # 盈亏比1:1
+                preset_stop_surplus_price = price - preset_stop_loss_price
+
+        return OrderInfo(
+            side='buy' if order_block.side == 'long' else 'sell',
+            price=price,
+            preset_stop_surplus_price=preset_stop_surplus_price,
+            preset_stop_loss_price=preset_stop_loss_price
+        )
+
+
 async def main():
     async with settings.create_async_exchange() as exchange:
         exchange.set_sandbox_mode(True)
         options = [
-            RunnerOption(
+            CustomRunnerOptions(
                 symbol="SBTCSUSDT",
-                timeframe="30m",
-                coin_size=0.01
+                timeframe="1m",
+                coin_size=0.01,
+                runner_class=BTCRunner
             ),
-            RunnerOption(
-                symbol="SETHSUSDT",
-                timeframe="30m",
-                coin_size=0.5
-            )
         ]
         rm = RunnerManager(options, exchange, "SUSDT-FUTURES")
         await rm.run()
