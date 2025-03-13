@@ -387,7 +387,7 @@ async def main():
         options = [
             CustomRunnerOptions(
                 symbol="SBTCSUSDT",
-                timeframe="1m",
+                timeframe="30m",
                 coin_size=0.01,
                 runner_class=BTCRunner
             ),
