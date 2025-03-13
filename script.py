@@ -66,6 +66,7 @@ class Runner(object):
         self.symbol = symbol
         self.product_type = product_type
         self.exchange = exchange
+        self._lock = asyncio.Lock()
 
     async def run(self):
         while True:
@@ -75,19 +76,39 @@ class Runner(object):
                 logger.exception(f"Failed to run for: {self.symbol}, {self.timeframe}")
                 await asyncio.sleep(3)
 
+    async def _run_once_with_lock(self):
+        async with self._lock:
+            await self._run_once()
+
     async def _run(self):
+        await asyncio.gather(*[
+            self._watch_my_trades(),
+            self._watch_klines()
+        ])
+
+    async def _watch_klines(self):
+        """检查k线, 如果收线则重新检查订单块并下单"""
+        logger.info("watch klines")
         prepare_task = asyncio.create_task(self.exchange.watch_ohlcv(self.symbol, self.timeframe))
-
         last_run_datetime = datetime.datetime.now()
-        await self._run_once()
-
+        await self._run_once_with_lock()
         await prepare_task
+
         while True:
             ohlcv = await self.exchange.watch_ohlcv(self.symbol, self.timeframe)
             kline = KLine.from_ccxt(ohlcv[-1])
             if kline.opening_time > last_run_datetime:
-                await self._run_once()
+                logger.info("_run_once_with_lock by _watch_klines")
+                await self._run_once_with_lock()
                 last_run_datetime = kline.opening_time
+
+    async def _watch_my_trades(self):
+        """监听订单成交, 如果出现成交则重新检查订单块下单"""
+        logger.info("watch my trades")
+        while True:
+            await self.exchange.watch_my_trades(self.symbol)
+            logger.info("_run_once_with_lock by _watch_my_trades")
+            await self._run_once_with_lock()
 
     async def _get_klines(self) -> list[KLine]:
         ohlcv = await self.exchange.fetch_ohlcv(
@@ -145,8 +166,8 @@ class Runner(object):
             preset_stop_loss_price = kline.lowest_price
         else:
             # 做空订单块
-            price = kline.lowest_price,
-            preset_stop_surplus_price = kline.lowest_price - kline.delta_price,
+            price = kline.lowest_price
+            preset_stop_surplus_price = kline.lowest_price - kline.delta_price
             preset_stop_loss_price = kline.highest_price
 
         return OrderInfo(
@@ -245,6 +266,7 @@ class RunnerManager(object):
         exchange: Exchange,
         product_type: str
     ):
+        assert len({option.symbol for option in options}) == len(options)
         self.product_type = product_type
         self.exchange = exchange
         self.options = options
@@ -391,6 +413,11 @@ async def main():
                 coin_size=0.01,
                 runner_class=BTCRunner
             ),
+            # RunnerOption(
+            #     symbol="SETHSUSDT",
+            #     timeframe="1m",
+            #     coin_size=0.01,
+            # ),
         ]
         rm = RunnerManager(options, exchange, "SUSDT-FUTURES")
         await rm.run()
