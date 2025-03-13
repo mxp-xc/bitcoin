@@ -220,7 +220,6 @@ class Runner(object):
     async def _run_once(self):
         # 当前持仓数据
         logger.info(f"run once for {self.symbol}, {self.timeframe = }")
-        await self._cancel_all_orders()
         position_map = await self._get_position_map()
         if 'short' in position_map and 'long' in position_map:
             logger.warning("当前有多空持仓, 不执行策略")
@@ -246,6 +245,7 @@ class Runner(object):
             (ob for ob in ob_parser.order_blocks.values() if ob.side == "short"),
             key=lambda o: o.order_block_kline.lowest_price,
         )
+        await self._cancel_all_orders()
         if 'long' not in position_map and long_order_blocks:
             # 存在多单订单块并且没有多单持仓, 才下订单
             await self._create_order(long_order_blocks, short_order_blocks)
@@ -312,6 +312,7 @@ class BTCRunner(Runner):
     @staticmethod
     def is_workday():
         """是否是工作日"""
+        # return False
         return datetime.datetime.now().isoweekday() <= 5
 
     async def _choice_order_block(self, context: PlaceOrderContext) -> OrderBlock | None:
@@ -380,9 +381,9 @@ class BTCRunner(Runner):
                 preset_stop_surplus_price = price + 1.5 * (price - preset_stop_loss_price)
             else:
                 # 周末需要多带0.2的止损
-                preset_stop_loss_price -= 0.2 * price
+                preset_stop_loss_price -= 0.002 * price
                 # 盈亏比1:1
-                preset_stop_surplus_price = price + preset_stop_loss_price
+                preset_stop_surplus_price = price + (price - preset_stop_loss_price)
         else:
             # 做空止损上影线
             preset_stop_loss_price = kline.highest_price
@@ -393,7 +394,7 @@ class BTCRunner(Runner):
                 # 周末需要多带0.2的止损
                 preset_stop_loss_price += 0.002 * price
                 # 盈亏比1:1
-                preset_stop_surplus_price = price - preset_stop_loss_price
+                preset_stop_surplus_price = price - (preset_stop_loss_price - price)
 
         return OrderInfo(
             side='buy' if order_block.side == 'long' else 'sell',
