@@ -6,11 +6,13 @@ from ccxt.pro import Exchange
 from loguru import logger
 
 from trading.schema.base import OrderBlock
-from .base import Runner, PlaceOrderContext, OrderInfo
+from .base import Runner, PlaceOrderContext, OrderInfo, KLine
 
 if TYPE_CHECKING:
     # for dev
     from ccxt.pro.bitget import bitget as Exchange  # noqa
+
+KLine  # noqa
 
 
 class ETH5MRunner(Runner):
@@ -45,21 +47,21 @@ class ETH5MRunner(Runner):
             return None
         for order_block in context.order_blocks:
             k1, k2 = order_block.klines[0], order_block.klines[1]
+            message = []
             elapsed = context.current_kline.opening_time - k1.opening_time
             if elapsed < self.effective_start_time or elapsed > self.effective_end_time:
                 minus = elapsed.total_seconds() // 60
-                logger.info(f"[时间 reject]. 触发时间: {minus}min. {k1}")
-                continue
+                message.append(f"[时间]. 出现到当前的时间: {minus}min不满足")
             if k1.get_undulate_percent(side=order_block.side) <= self.order_block_kline_undulate_percent:
-                logger.info(
-                    f"[振幅: reject] {k1.get_undulate_percent()} <= {self.order_block_kline_undulate_percent}. {k1}"
-                )
-                continue
+                message.append(
+                    f"[振幅] {k1.get_undulate_percent()} <= {self.order_block_kline_undulate_percent}.")
             volume_percent = k2.volume / k1.volume
             if volume_percent < self.volume_percent_threshold:
-                logger.info(f"[成交量比例 reject] {volume_percent} < {self.volume_percent_threshold}. {k1}")
-                continue
-            return order_block
+                message.append(f"[成交量比例] {volume_percent} < {self.volume_percent_threshold}.")
+
+            if not message:
+                return order_block
+            logger.info(f"[ETH-5m reject]{k1}\n{'\n'.join(message)}")
         return None
 
     async def _resolve_order_info(self, order_block: OrderBlock, context: PlaceOrderContext) -> OrderInfo:
