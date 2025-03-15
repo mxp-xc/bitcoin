@@ -106,6 +106,22 @@ class KLine(BaseModel):
     def entity_lowest_price(self):
         return min(self.opening_price, self.closing_price)
 
+    @property
+    def side(self) -> PositionSide:
+        if self.opening_price >= self.closing_price:
+            return 'long'
+        return 'short'
+
+    def get_undulate(self, side: PositionSide | None = None):
+        """获取k线方向的振幅"""
+        side = side or self.side
+        if side == 'long':
+            return utils.get_undulate(self.lowest_price, self.highest_price)
+        return utils.get_undulate(self.highest_price, self.lowest_price)
+
+    def get_undulate_percent(self, side: Position | None = None):
+        return self.get_undulate(side) * 100
+
     def as_str_zh(self):
         return (
             f"KLine("

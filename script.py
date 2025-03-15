@@ -2,7 +2,7 @@
 import asyncio
 import datetime
 import uuid
-from typing import TYPE_CHECKING, Type
+from typing import TYPE_CHECKING, Type, Any
 
 from ccxt.base.errors import ExchangeError
 from ccxt.base.types import Position, OrderSide, Num
@@ -11,6 +11,8 @@ from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
 from conf import settings
+from trading import utils
+from trading.exceptions import StopTradingException
 from trading.helper import OrderBlockParser
 from trading.schema.base import OrderBlock, KLine
 
@@ -39,6 +41,7 @@ class OrderInfo(BaseModel):
 class PlaceOrderContext(BaseModel):
     order_blocks: list[OrderBlock]
     mutex_order_blocs: list[OrderBlock]
+    current_kline: KLine
 
     model_config = ConfigDict(
         arbitrary_types_allowed=True
@@ -49,6 +52,7 @@ class RunnerOption(BaseModel):
     symbol: str
     timeframe: str
     coin_size: float
+    init_kwargs: dict[str, Any] | None = None
     min_fvg: int = 0
 
 
@@ -58,8 +62,9 @@ class Runner(object):
         symbol: str,
         product_type: str,
         exchange: Exchange,
-        coin_size: float = 0.001,
-        timeframe: str = "30m",
+        coin_size: float,
+        timeframe: str,
+        **kwargs
     ):
         self.timeframe = timeframe
         self.coin_size = coin_size
@@ -72,6 +77,9 @@ class Runner(object):
         while True:
             try:
                 await self._run()
+            except StopTradingException:
+                logger.exception(f"stop trading for {self.__class__.__qualname__} {self.symbol} {self.timeframe}")
+                break
             except Exception as exc:  # noqa: ignored
                 logger.exception(f"Failed to run for: {self.symbol}, {self.timeframe}")
                 await asyncio.sleep(3)
@@ -110,13 +118,15 @@ class Runner(object):
             logger.info("_run_once_with_lock by _watch_my_trades")
             await self._run_once_with_lock()
 
-    async def _get_klines(self) -> list[KLine]:
+    async def _get_klines(self, since: int | None = None, until: int | None = None) -> list[KLine]:
+        since = since or int((datetime.datetime.now() - datetime.timedelta(days=60)).timestamp() * 1000)
+        until = until or int(datetime.datetime.now().timestamp() * 1000)
         ohlcv = await self.exchange.fetch_ohlcv(
             symbol=self.symbol,
             timeframe=self.timeframe,
-            since=int((datetime.datetime.now() - datetime.timedelta(days=60)).timestamp() * 1000),
+            since=since,
             params={
-                "until": int(datetime.datetime.now().timestamp() * 1000)
+                "until": until
             },
             limit=1000
         )
@@ -126,6 +136,11 @@ class Runner(object):
         ob_parser = OrderBlockParser(timeframe=self.timeframe)
         logger.info(f"读取`{self.symbol}`k线分析订单块中, 时间级别为: {self.timeframe}")
         klines = await self._get_klines()
+        if not klines:
+            raise StopTradingException("not klines")
+        logger.info(
+            f"读取到的时间范围{utils.format_datetime(klines[0].opening_time)} - {utils.format_datetime(klines[-1].opening_time)}"
+        )
         # dt = datetime.datetime.now().replace(hour=2, minute=7)
         # klines = list(filter(lambda k: k.opening_time <= dt, klines))
         for kline in klines[:-1]:
@@ -195,18 +210,20 @@ class Runner(object):
     async def _create_order(
         self,
         order_blocks: list[OrderBlock],
-        mutex_order_blocs: list[OrderBlock]
+        mutex_order_blocs: list[OrderBlock],
+        klines: list[KLine]
     ):
         context = PlaceOrderContext(
             order_blocks=order_blocks,
-            mutex_order_blocs=mutex_order_blocs
+            mutex_order_blocs=mutex_order_blocs,
+            current_kline=klines[-1]
         )
         order_block = await self._choice_order_block(context)
         if not order_block:
             return
 
         order_info = await self._resolve_order_info(order_block, context)
-        logger.info(f"{order_info = }")
+        logger.info(f"{order_info = }. {order_block.order_block_kline}")
         await self._create_order0(order_info)
 
     async def _choice_order_block(self, context: PlaceOrderContext) -> OrderBlock | None:  # noqa
@@ -248,11 +265,15 @@ class Runner(object):
         await self._cancel_all_orders()
         if 'long' not in position_map and long_order_blocks:
             # 存在多单订单块并且没有多单持仓, 才下订单
-            await self._create_order(long_order_blocks, short_order_blocks)
+            await self._create_order(long_order_blocks, short_order_blocks, klines)
+        elif long_order_blocks:
+            logger.info(f"当前仓位存在多单")
 
         if 'short' not in position_map and short_order_blocks:
             # 存在空单订单块并且没有多单持仓, 才下订单
-            await self._create_order(short_order_blocks, long_order_blocks)
+            await self._create_order(short_order_blocks, long_order_blocks, klines)
+        elif short_order_blocks:
+            logger.info(f"当前仓位存在空单")
 
 
 class CustomRunnerOptions(RunnerOption):
@@ -281,7 +302,8 @@ class RunnerManager(object):
             product_type=self.product_type,
             exchange=self.exchange,
             timeframe=option.timeframe,
-            coin_size=option.coin_size
+            coin_size=option.coin_size,
+            **(option.init_kwargs or {})
         )
 
     async def _get_account_info(self):
@@ -328,7 +350,7 @@ class BTCRunner(Runner):
                 # 多单, 除上影线
                 undulate = (k1.delta_price / k1.highest_price) * 100
             if undulate <= 0.2 or undulate >= 1.5:
-                logger.info(f"[振幅: pass] {undulate} <= 0.2 or {undulate} >= 1.5. {k1}")
+                logger.info(f"[振幅: reject] {undulate} <= 0.2 or {undulate} >= 1.5. {k1}")
                 continue
 
             k2 = klines[2]
@@ -339,7 +361,7 @@ class BTCRunner(Runner):
             percent = (fvg / k1.highest_price) * 100
             # fvg小于0.1的略过
             if percent < 0.1:
-                logger.info(f"[fvg: pass] {percent} < 0.1. {k1}")
+                logger.info(f"[fvg: reject] {percent} < 0.1. {k1}")
                 continue
             return order_block
         return None
@@ -404,23 +426,106 @@ class BTCRunner(Runner):
         )
 
 
+class ETH5MRunner(Runner):
+    def __init__(
+        self,
+        symbol: str,
+        product_type: str,
+        exchange: Exchange,
+        coin_size: float,
+        timeframe: str,
+        effective_start_time: datetime.timedelta,
+        effective_end_time: datetime.timedelta,
+        order_block_kline_undulate_percent: float = 0.2,
+        volume_percent_threshold: float = 1.9,
+        profit_and_loss_ratio: float = 1.47,
+        **kwargs
+    ):
+        super().__init__(symbol, product_type, exchange, coin_size, timeframe, **kwargs)
+        self.profit_and_loss_ratio = profit_and_loss_ratio
+        self.order_block_kline_undulate_percent = order_block_kline_undulate_percent
+        self.volume_percent_threshold = volume_percent_threshold
+        self.effective_start_time = effective_start_time
+        self.effective_end_time = effective_end_time
+
+    async def _get_klines(self, since: int | None = None, until: int | None = None) -> list[KLine]:
+        # 3.14 18：30
+        start = datetime.datetime(year=2025, month=3, day=12, hour=16)
+        end = start.replace(minute=40)
+        return await super()._get_klines(int(start.timestamp() * 1000), int(end.timestamp() * 1000))
+
+    async def _choice_order_block(self, context: PlaceOrderContext) -> OrderBlock | None:
+        if not context.order_blocks:
+            return None
+        for order_block in context.order_blocks:
+            k1, k2 = order_block.klines[0], order_block.klines[1]
+            elapsed = k1.opening_time - context.current_kline.opening_time
+            if self.effective_start_time <= elapsed <= self.effective_end_time:
+                minus = elapsed.total_seconds() // 60
+                logger.info(f"[时间 reject]. 触发时间: {minus}min. {k1}")
+                continue
+            if k1.get_undulate_percent(side=order_block.side) <= self.order_block_kline_undulate_percent:
+                logger.info(
+                    f"[振幅: reject] {k1.get_undulate_percent()} <= {self.order_block_kline_undulate_percent}. {k1}"
+                )
+                continue
+            volume_percent = k2.volume / k1.volume
+            if volume_percent < self.volume_percent_threshold:
+                logger.info(f"[成交量比例 reject] {volume_percent} < {self.volume_percent_threshold}. {k1}")
+                continue
+            return order_block
+        return None
+
+    async def _resolve_order_info(self, order_block: OrderBlock, context: PlaceOrderContext) -> OrderInfo:
+        kline = order_block.order_block_kline
+        if order_block.side == 'long':
+            # 多单入场在上影线
+            price = kline.highest_price
+            # 止损在下影线
+            preset_stop_loss_price = kline.lowest_price
+            # 盈亏比1:1.47
+            preset_stop_surplus_price = price + kline.delta_price * self.profit_and_loss_ratio
+        else:
+            # 空单入场在下影线
+            price = kline.lowest_price
+            # 止损在上影线
+            preset_stop_loss_price = kline.highest_price
+            # 盈亏比1:1.47
+            preset_stop_surplus_price = price - kline.delta_price * self.profit_and_loss_ratio
+
+        return OrderInfo(
+            side="buy" if order_block.side == "long" else "sell",
+            price=price,
+            preset_stop_surplus_price=preset_stop_surplus_price,
+            preset_stop_loss_price=preset_stop_loss_price
+        )
+
+
 async def main():
     async with settings.create_async_exchange() as exchange:
-        exchange.set_sandbox_mode(True)
+        # exchange.set_sandbox_mode(True)
         options = [
-            CustomRunnerOptions(
-                symbol="SBTCSUSDT",
-                timeframe="30m",
-                coin_size=0.01,
-                runner_class=BTCRunner
-            ),
-            # RunnerOption(
-            #     symbol="SETHSUSDT",
-            #     timeframe="1m",
+            # CustomRunnerOptions(
+            #     symbol="SBTCSUSDT",
+            #     timeframe="30m",
             #     coin_size=0.01,
+            #     runner_class=BTCRunner
             # ),
+            CustomRunnerOptions(
+                symbol="ETHUSDT",
+                timeframe="5m",
+                coin_size=0.01,
+                runner_class=ETH5MRunner,
+                init_kwargs={
+                    "effective_start_time": datetime.timedelta(minutes=50),
+                    "effective_end_time": datetime.timedelta(hours=2, minutes=40),
+                    "order_block_kline_undulate_percent": 0.19,  # 订单块方向的振幅
+                    "volume_percent_threshold": 1.9,  # 成交量比例
+                    "profit_and_loss_ratio": 1.47,  # 盈亏比
+                }
+            ),
         ]
-        rm = RunnerManager(options, exchange, "SUSDT-FUTURES")
+        rm = RunnerManager(options, exchange, "USDT-FUTURES")
         await rm.run()
 
 
