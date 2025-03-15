@@ -26,8 +26,8 @@ async def main():
                 init_kwargs={
                     "effective_start_time": datetime.timedelta(minutes=50),
                     "effective_end_time": datetime.timedelta(hours=2, minutes=40),
-                    "order_block_kline_undulate_percent": 0.12,  # 订单块方向的振幅
-                    "volume_percent_threshold": 1.6,  # 成交量比例
+                    "order_block_kline_undulate_percent": 0.2,  # 订单块方向的振幅
+                    "volume_percent_threshold": 1.9,  # 成交量比例
                     "profit_and_loss_ratio": 1.47,  # 盈亏比
                 }
             ),
