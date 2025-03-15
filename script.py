@@ -448,11 +448,11 @@ class ETH5MRunner(Runner):
         self.effective_start_time = effective_start_time
         self.effective_end_time = effective_end_time
 
-    async def _get_klines(self, since: int | None = None, until: int | None = None) -> list[KLine]:
-        # 3.14 18：30
-        start = datetime.datetime(year=2025, month=3, day=12, hour=16)
-        end = start.replace(minute=40)
-        return await super()._get_klines(int(start.timestamp() * 1000), int(end.timestamp() * 1000))
+    # async def _get_klines(self, since: int | None = None, until: int | None = None) -> list[KLine]:
+    #     # 3.14 18：30
+    #     start = datetime.datetime(year=2025, month=3, day=12, hour=16)
+    #     end = start.replace(minute=40)
+    #     return await super()._get_klines(int(start.timestamp() * 1000), int(end.timestamp() * 1000))
 
     async def _choice_order_block(self, context: PlaceOrderContext) -> OrderBlock | None:
         if not context.order_blocks:
