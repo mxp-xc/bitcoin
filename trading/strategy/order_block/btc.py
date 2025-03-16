@@ -11,6 +11,23 @@ if TYPE_CHECKING:
 
 
 class BTCRunner(EntryRunner):
+    def __init__(self, **kwargs):
+        kwargs['min_fvg_percent'] = 0
+        super().__init__(**kwargs)
+
+    async def _choice_order_block_extra(
+        self,
+        order_block: OrderBlock,
+        context: PlaceOrderContext,
+    ) -> list[str]:
+        fvg_list = order_block.get_fvg_percent()
+        if max(fvg_list) < 0.1:
+            return [
+                f"[fvg: reject] {max(fvg_list)} < {self.min_fvg_percent}. {fvg_list}"
+            ]
+
+        return []
+
     async def _post_process_order_info(
         self,
         order_block: OrderBlock,

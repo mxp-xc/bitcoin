@@ -9,6 +9,7 @@ from trading.strategy.order_block.eth import ETH5MRunner  # noqa
 
 
 def _test():
+    """不用管"""
     return RunnerOption(
         symbol="BTC/USDT:USDT",  # 交易对
         timeframe="30m",  # 时间框架
