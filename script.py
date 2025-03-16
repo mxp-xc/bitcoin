@@ -36,7 +36,7 @@ async def main():
                         'usdt': 1
                     }
                 },
-                runner_class=BTCRunner2,
+                runner_class=BTCRunner,
                 min_order_block_kline_undulate_percent=0.2,  # 最小振幅
                 max_order_block_kline_undulate_percent=1.5,  # 最大振幅
                 init_kwargs={
