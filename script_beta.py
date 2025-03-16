@@ -22,7 +22,6 @@ async def main():
                     }
                 },
                 runner_class=BTCRunner2,
-                min_order_block_kline_undulate_percent=0.2,
                 init_kwargs={
                     "middle_entry_undulate": 0.7,  # 中位入场的最低振幅
                 }
