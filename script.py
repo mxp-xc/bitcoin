@@ -18,7 +18,7 @@ async def main():
                 runner_class=BTCRunner
             ),
             CustomRunnerOptions(
-                symbol="ETHUSDT",
+                symbol="ETH/USDT:USDT",
                 timeframe="5m",
                 coin_size=0.01,
                 runner_class=ETH5MRunner,
