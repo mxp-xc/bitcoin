@@ -50,3 +50,44 @@ class BTCRunner(EntryRunner):
         order_info.preset_stop_surplus_price = preset_stop_surplus_price
         order_info.preset_stop_loss_price = preset_stop_loss_price
         return order_info
+
+
+class BTCRunner2(EntryRunner):
+    def __init__(self, **kwargs):
+        kwargs['min_fvg_percent'] = 0
+        super().__init__(**kwargs)
+
+    async def _choice_order_block_extra(
+        self,
+        order_block: OrderBlock,
+        context: PlaceOrderContext,
+    ) -> list[str]:
+        fvg_list = order_block.get_fvg_percent()
+        if len(fvg_list) == 1 and fvg_list[0] < 0.05:
+            return [
+                f"[fvg: reject] {fvg_list[0]} < {self.min_fvg_percent}. {fvg_list}"
+            ]
+
+        return []
+
+    async def _post_process_order_info(
+        self,
+        order_block: OrderBlock,
+        context: PlaceOrderContext,
+        order_info: OrderInfo
+    ) -> OrderInfo:
+        order_info = await super()._post_process_order_info(order_block, context, order_info)
+        loss_price = order_info.price * 0.001
+
+        if order_block.side == 'long':
+            order_info.preset_stop_loss_price -= loss_price
+            order_info.preset_stop_surplus_price = order_info.price + (
+                order_info.price - order_info.preset_stop_loss_price
+            )
+        else:
+            order_info.preset_stop_loss_price += loss_price
+            order_info.preset_stop_surplus_price = order_info.price - (
+                order_info.preset_stop_loss_price - order_info.price
+            )
+
+        return order_info

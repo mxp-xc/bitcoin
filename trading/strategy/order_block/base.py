@@ -332,6 +332,8 @@ class Runner(object):
             )
         except InsufficientFunds as exc:
             raise StopTradingException("余额不足") from exc
+        except ExchangeError as exc:
+            raise StopTradingException("创建订单失败") from exc
 
     async def _create_order(
         self,
