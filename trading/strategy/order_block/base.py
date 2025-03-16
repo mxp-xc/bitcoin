@@ -1,9 +1,9 @@
 import asyncio
 import datetime
 import uuid
-from typing import TYPE_CHECKING, Type, Any
+from typing import TYPE_CHECKING, Type, Any, TypedDict, Literal
 
-from ccxt.base.errors import ExchangeError
+from ccxt.base.errors import ExchangeError, InsufficientFunds
 from ccxt.base.types import Position, OrderSide, Num
 from ccxt.pro import Exchange
 from loguru import logger
@@ -28,8 +28,8 @@ class OrderInfo(BaseModel):
     side: OrderSide
     price: Num
     amount: float | None = None
-    preset_stop_surplus_price: Num = None
-    preset_stop_loss_price: Num = None
+    preset_stop_surplus_price: float | None = None
+    preset_stop_loss_price: float | None = None
     # client_oid: Annotated[
     #     str | None,
     #     Field(serialization_alias="clientOid", default_factory=_client_oid_default_factory)
@@ -46,12 +46,109 @@ class PlaceOrderContext(BaseModel):
     )
 
 
+_position_strategy = {}
+
+
+class PositionStrategy(object):
+    """仓位策略"""
+
+    def __init__(self, leverage: int | None = None):
+        if leverage:
+            assert leverage > 0
+        self.leverage = leverage
+
+    def wrap_leverage(self, value: float):
+        if self.leverage is None:
+            return value
+        return value * self.leverage
+
+    async def get_amount(self, order_info: OrderInfo, runner: "Runner") -> float:
+        raise NotImplementedError
+
+
+class SimplePositionStrategy(PositionStrategy):
+    def __init__(self, usdt: float, **kwargs):
+        super().__init__(**kwargs)
+        self.usdt = usdt
+
+    async def get_amount(self, order_info: OrderInfo, runner: "Runner"):
+        if not order_info.price:
+            raise StopTradingException(f"没有入场价格")
+        return self.usdt / order_info.price
+
+
+_position_strategy["simple"] = SimplePositionStrategy
+
+
+class ElasticityPositionStrategy(PositionStrategy):
+    def __init__(
+        self,
+        base_total_usdt: float,
+        base_usdt: float,
+        **kwargs
+    ):
+        assert 0 < base_usdt < base_total_usdt
+        self.base_total_usdt = base_total_usdt
+        self.base_usdt = base_usdt
+        super().__init__(**kwargs)
+
+    def _get_interval(self, x):
+        x += 1
+        n = 0
+        while x > self.base_total_usdt * (2 ** n):
+            n += 1
+        return 2 ** n // 2
+
+    async def _get_base_amount(self, runner: "Runner") -> float:
+        balances = await runner.exchange.fetch_balance({
+            "type": "swap",
+            "productType": runner.product_type
+        })
+        if runner.product_type.startswith("S"):
+            balance = balances["SUSDT"]
+        else:
+            balance = balances["USDT"]
+        total_usdt = balance['total']
+        if self.base_total_usdt > total_usdt:
+            raise StopTradingException(f"当前账号余额: {total_usdt}少于配置的仓位最小金额: {self.base_total_usdt}")
+        interval = self._get_interval(total_usdt)
+        return self.base_usdt * interval
+
+    async def get_amount(self, order_info: OrderInfo, runner: "Runner") -> float:
+        if not order_info.price or not order_info.preset_stop_loss_price:
+            raise StopTradingException("弹性仓位需要存在入场价格和止损价格")
+        # 作为亏损的金额
+        base_amount = await self._get_base_amount(runner)
+        # 计算亏损比例
+        percent = abs(utils.get_undulate_percent(order_info.price, order_info.preset_stop_loss_price))
+        # 实际需要投入的价格
+        amount = base_amount / percent
+        return amount / order_info.price
+
+
+_position_strategy["elasticity"] = ElasticityPositionStrategy
+
+
+class PositionStrategyTypedDict(TypedDict):
+    strategy: Literal["simple", "elasticity"] | None
+    kwargs: dict[str, Any] | None
+
+
 class RunnerOption(BaseModel):
     symbol: str
     timeframe: str
-    coin_size: float
+    position_strategy: PositionStrategyTypedDict
     init_kwargs: dict[str, Any] | None = None
     min_fvg: int = 0
+
+
+def _create_position_strategy(strategy: str | None, **kwargs) -> PositionStrategy:
+    if strategy is None:
+        strategy = "simple"
+    strategy_class = _position_strategy.get(strategy)
+    if strategy_class is None:
+        raise ValueError(f"{strategy}仓位策略")
+    return strategy_class(**kwargs)
 
 
 class Runner(object):
@@ -60,12 +157,15 @@ class Runner(object):
         symbol: str,
         product_type: str,
         exchange: Exchange,
-        coin_size: float,
+        position_strategy: PositionStrategyTypedDict,
         timeframe: str,
         **kwargs
     ):
         self.timeframe = timeframe
-        self.coin_size = coin_size
+        self.position_strategy = _create_position_strategy(
+            position_strategy.get('strategy'),
+            **(position_strategy["kwargs"] or {})
+        )
         self.symbol = symbol
         self.product_type = product_type
         self.exchange = exchange
@@ -137,7 +237,8 @@ class Runner(object):
         if not klines:
             raise StopTradingException("not klines")
         logger.info(
-            f"读取到的时间范围{utils.format_datetime(klines[0].opening_time)} - {utils.format_datetime(klines[-1].opening_time)}"
+            f"读取到的时间范围"
+            f"{utils.format_datetime(klines[0].opening_time)} - {utils.format_datetime(klines[-1].opening_time)}"
         )
         # dt = datetime.datetime.now().replace(hour=2, minute=7)
         # klines = list(filter(lambda k: k.opening_time <= dt, klines))
@@ -183,27 +284,51 @@ class Runner(object):
             preset_stop_surplus_price = kline.lowest_price - kline.delta_price
             preset_stop_loss_price = kline.highest_price
 
-        return OrderInfo(
+        order_info = OrderInfo(
             side="buy" if side == "long" else "sell",
             price=price,
             preset_stop_surplus_price=preset_stop_surplus_price,
             preset_stop_loss_price=preset_stop_loss_price
         )
+        return order_info
+
+    async def _get_position_amount(self, order_info: OrderInfo):
+        try:
+            coin_size = await self.position_strategy.get_amount(order_info, self)
+            if coin_size <= 0:
+                raise StopTradingException("配置的仓位策略下单<=0个")
+            if self.position_strategy.leverage:
+                return coin_size * self.position_strategy.leverage
+            if self.exchange.id != "bitget":
+                raise StopTradingException("非bitget平台不支持动态读取杠杆计算仓位")
+            value = await self.exchange.fetch_leverage(self.symbol)
+            leverage = value['info']['crossedMarginLeverage']
+            return coin_size * leverage
+
+        except StopTradingException:
+            raise
+        except Exception as exc:
+            raise StopTradingException("计算仓位出错") from exc
 
     async def _create_order0(self, order_info: OrderInfo):
         """下单"""
+        if not order_info.amount or order_info.amount < 0:
+            raise StopTradingException(f"invalid order_info: {order_info}")
         params = {"tradeSide": "open"}
         if order_info.preset_stop_surplus_price:
             params["takeProfit"] = {"stopPrice": order_info.preset_stop_surplus_price}
         if order_info.preset_stop_loss_price:
             params["stopLoss"] = {"stopPrice": order_info.preset_stop_loss_price}
-        await self.exchange.create_limit_order(
-            self.symbol,
-            order_info.side,
-            order_info.amount or self.coin_size,
-            price=order_info.price,
-            params=params
-        )
+        try:
+            await self.exchange.create_limit_order(
+                self.symbol,
+                order_info.side,
+                order_info.amount,
+                price=order_info.price,
+                params=params
+            )
+        except InsufficientFunds as exc:
+            raise StopTradingException("余额不足") from exc
 
     async def _create_order(
         self,
@@ -221,6 +346,8 @@ class Runner(object):
             return
 
         order_info = await self._resolve_order_info(order_block, context)
+        coin_size = await self._get_position_amount(order_info)
+        order_info.amount = coin_size
         logger.info(f"{order_info = }. {order_block.order_block_kline}")
         await self._create_order0(order_info)
 
@@ -300,7 +427,7 @@ class RunnerManager(object):
             product_type=self.product_type,
             exchange=self.exchange,
             timeframe=option.timeframe,
-            coin_size=option.coin_size,
+            position_strategy=option.position_strategy,
             **(option.init_kwargs or {})
         )
 

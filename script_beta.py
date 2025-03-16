@@ -15,13 +15,24 @@ async def main():
             CustomRunnerOptions(
                 symbol="SBTCSUSDT",
                 timeframe="30m",
-                coin_size=0.001,
+                position_strategy={
+                    'strategy': 'elasticity',
+                    'kwargs': {
+                        'base_total_usdt': 1000,
+                        'base_usdt': 5,
+                    }
+                },
                 runner_class=BTCRunner
             ),
             CustomRunnerOptions(
                 symbol="SETHSUSDT",
                 timeframe="5m",
-                coin_size=0.01,
+                position_strategy={
+                    'strategy': 'simple',
+                    'kwargs': {
+                        'usdt': 5,
+                    }
+                },
                 runner_class=ETH5MRunner,
                 init_kwargs={
                     "effective_start_time": datetime.timedelta(minutes=50),

@@ -2,7 +2,6 @@
 import datetime
 from typing import TYPE_CHECKING
 
-from ccxt.pro import Exchange
 from loguru import logger
 
 from trading.schema.base import OrderBlock
@@ -18,11 +17,6 @@ KLine  # noqa
 class ETH5MRunner(Runner):
     def __init__(
         self,
-        symbol: str,
-        product_type: str,
-        exchange: Exchange,
-        coin_size: float,
-        timeframe: str,
         effective_start_time: datetime.timedelta,
         effective_end_time: datetime.timedelta,
         order_block_kline_undulate_percent: float = 0.2,
@@ -30,7 +24,7 @@ class ETH5MRunner(Runner):
         profit_and_loss_ratio: float = 1.47,
         **kwargs
     ):
-        super().__init__(symbol, product_type, exchange, coin_size, timeframe, **kwargs)
+        super().__init__(**kwargs)
         self.profit_and_loss_ratio = profit_and_loss_ratio
         self.order_block_kline_undulate_percent = order_block_kline_undulate_percent
         self.volume_percent_threshold = volume_percent_threshold
