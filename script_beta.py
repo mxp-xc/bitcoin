@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 import asyncio
-import datetime
+import datetime  # noqa
 
 from conf import settings
-from trading.strategy.order_block.base import CustomRunnerOptions, RunnerManager
-from trading.strategy.order_block.btc import BTCRunner
-from trading.strategy.order_block.eth import ETH5MRunner
+from trading.strategy.order_block.base import CustomRunnerOptions, RunnerManager  # noqa
+from trading.strategy.order_block.btc import BTCRunner  # noqa
+from trading.strategy.order_block.eth import ETH5MRunner  # noqa
 
 
 async def main():
@@ -16,13 +16,18 @@ async def main():
                 symbol="SBTCSUSDT",
                 timeframe="30m",
                 position_strategy={
-                    'strategy': 'elasticity',
+                    'strategy': 'simple',
                     'kwargs': {
-                        'base_total_usdt': 1000,
-                        'base_usdt': 5,
+                        'usdt': 5,
                     }
                 },
-                runner_class=BTCRunner
+                min_fvg_percent=0.1,
+                min_order_block_kline_undulate_percent=0.2,
+                max_order_block_kline_undulate_percent=1.5,
+                runner_class=BTCRunner,
+                init_kwargs={
+                    "middle_entry_undulate": 0.7,  # 中位入场的最低振幅
+                }
             ),
             CustomRunnerOptions(
                 symbol="SETHSUSDT",
@@ -33,11 +38,11 @@ async def main():
                         'usdt': 5,
                     }
                 },
+                min_order_block_kline_undulate_percent=0.2,
                 runner_class=ETH5MRunner,
                 init_kwargs={
                     "effective_start_time": datetime.timedelta(minutes=50),
                     "effective_end_time": datetime.timedelta(hours=2, minutes=40),
-                    "order_block_kline_undulate_percent": 0.2,  # 订单块方向的振幅
                     "volume_percent_threshold": 1.9,  # 成交量比例
                     "profit_and_loss_ratio": 1.47,  # 盈亏比
                 }

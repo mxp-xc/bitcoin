@@ -139,7 +139,9 @@ class RunnerOption(BaseModel):
     timeframe: str
     position_strategy: PositionStrategyTypedDict
     init_kwargs: dict[str, Any] | None = None
-    min_fvg: int = 0
+    min_fvg_percent: float = 0  # 最小
+    min_order_block_kline_undulate_percent: float = 0  # 最小订单块振幅
+    max_order_block_kline_undulate_percent: float = float('inf')
 
 
 def _create_position_strategy(strategy: str | None, **kwargs) -> PositionStrategy:
@@ -159,6 +161,9 @@ class Runner(object):
         exchange: Exchange,
         position_strategy: PositionStrategyTypedDict,
         timeframe: str,
+        min_fvg_percent: float,
+        min_order_block_kline_undulate_percent: float,
+        max_order_block_kline_undulate_percent: float,
         **kwargs
     ):
         self.timeframe = timeframe
@@ -169,6 +174,9 @@ class Runner(object):
         self.symbol = symbol
         self.product_type = product_type
         self.exchange = exchange
+        self.min_fvg_percent = min_fvg_percent
+        self.max_order_block_kline_undulate_percent = max_order_block_kline_undulate_percent
+        self.min_order_block_kline_undulate_percent = min_order_block_kline_undulate_percent
         self._lock = asyncio.Lock()
 
     async def run(self):
@@ -271,25 +279,16 @@ class Runner(object):
         logger.info("撤销完成")
 
     async def _resolve_order_info(self, order_block: OrderBlock, context: PlaceOrderContext) -> OrderInfo:
-        side = order_block.side
-        kline = order_block.order_block_kline
-        if side == 'long':
-            # 做多订单块
-            price = kline.highest_price
-            preset_stop_surplus_price = kline.highest_price + kline.delta_price
-            preset_stop_loss_price = kline.lowest_price
-        else:
-            # 做空订单块
-            price = kline.lowest_price
-            preset_stop_surplus_price = kline.lowest_price - kline.delta_price
-            preset_stop_loss_price = kline.highest_price
+        raise NotImplementedError
 
-        order_info = OrderInfo(
-            side="buy" if side == "long" else "sell",
-            price=price,
-            preset_stop_surplus_price=preset_stop_surplus_price,
-            preset_stop_loss_price=preset_stop_loss_price
-        )
+    async def _post_process_order_info(
+        self,
+        order_block: OrderBlock,
+        context: PlaceOrderContext,
+        order_info: OrderInfo
+    ) -> OrderInfo:
+        coin_size = await self._get_position_amount(order_info)
+        order_info.amount = coin_size
         return order_info
 
     async def _get_position_amount(self, order_info: OrderInfo):
@@ -317,8 +316,12 @@ class Runner(object):
         params = {"tradeSide": "open"}
         if order_info.preset_stop_surplus_price:
             params["takeProfit"] = {"stopPrice": order_info.preset_stop_surplus_price}
+        else:
+            raise StopTradingException("订单必须携带止盈")
         if order_info.preset_stop_loss_price:
             params["stopLoss"] = {"stopPrice": order_info.preset_stop_loss_price}
+        else:
+            raise StopTradingException("订单必须携带止损")
         try:
             await self.exchange.create_limit_order(
                 self.symbol,
@@ -346,15 +349,49 @@ class Runner(object):
             return
 
         order_info = await self._resolve_order_info(order_block, context)
-        coin_size = await self._get_position_amount(order_info)
-        order_info.amount = coin_size
+        order_info = await self._post_process_order_info(order_block, context, order_info)
         logger.info(f"{order_info = }. {order_block.order_block_kline}")
         await self._create_order0(order_info)
 
     async def _choice_order_block(self, context: PlaceOrderContext) -> OrderBlock | None:  # noqa
-        if context.order_blocks:
-            return context.order_blocks[0]
+        if not context.order_blocks:
+            return None
+        for order_block in context.order_blocks:
+            message = []
+            order_block_kline = order_block.order_block_kline
+            fvg_list = order_block.get_fvg_percent()
+            if not fvg_list:
+                raise StopTradingException(f"fvg not found. {order_block}")
+            if fvg_list[0] < self.min_fvg_percent:
+                message.append(f"[fvg: reject] {fvg_list[0]} < {self.min_fvg_percent}. {fvg_list}")
+
+            undulate = order_block_kline.get_undulate_percent(
+                side=order_block.side)
+            if undulate < self.min_order_block_kline_undulate_percent or undulate > self.max_order_block_kline_undulate_percent:
+                min_undulate = self.min_order_block_kline_undulate_percent
+                max_undulate = self.max_order_block_kline_undulate_percent
+                message.append(
+                    f"[振幅] "
+                    f"{undulate} not in [{min_undulate} - {max_undulate}]"
+                )
+
+            extra_message = await self._choice_order_block_extra(order_block, context)
+            message.extend(extra_message)
+            if not message:
+                return order_block
+            logger.info(
+                f"[{self.__class__.__qualname__}]-{self.symbol}-{self.timeframe} reject] "
+                f"{order_block_kline}\n"
+                f"{'\n'.join(message)}"
+            )
         return None
+
+    async def _choice_order_block_extra(
+        self,
+        order_block: OrderBlock,
+        context: PlaceOrderContext,
+    ) -> list[str]:
+        return []
 
     def _parse_order_block(self, order_block):
         pass
@@ -401,6 +438,48 @@ class Runner(object):
             logger.info(f"当前仓位存在空单")
 
 
+class EntryRunner(Runner):
+    def __init__(self, middle_entry_undulate: float = float('inf'), **kwargs):
+        self.middle_entry_undulate = middle_entry_undulate
+        super().__init__(**kwargs)
+
+    async def _resolve_order_info(
+        self,
+        order_block: OrderBlock,
+        context: PlaceOrderContext
+    ) -> OrderInfo:
+        kline = order_block.order_block_kline
+        if order_block.side == 'long':
+            # 多单, 除下影线
+            undulate = (kline.delta_price / kline.lowest_price) * 100
+        else:
+            # 空单, 除上影线
+            undulate = (kline.delta_price / kline.highest_price) * 100
+        # assert 0.4 < undulate < 1.5
+        if undulate > self.middle_entry_undulate:
+            # 中轨
+            price = kline.center_price
+        elif order_block.side == 'long':
+            # 多上影线
+            price = kline.highest_price
+        else:
+            # 空上影线
+            price = kline.lowest_price
+
+        if order_block.side == 'long':
+            # 做多止损下影线
+            preset_stop_loss_price = kline.lowest_price
+        else:
+            # 做空止损上影线
+            preset_stop_loss_price = kline.highest_price
+
+        return OrderInfo(
+            side='buy' if order_block.side == 'long' else 'sell',
+            price=price,
+            preset_stop_loss_price=preset_stop_loss_price
+        )
+
+
 class CustomRunnerOptions(RunnerOption):
     runner_class: Type[Runner]
 
@@ -428,6 +507,9 @@ class RunnerManager(object):
             exchange=self.exchange,
             timeframe=option.timeframe,
             position_strategy=option.position_strategy,
+            min_fvg_percent=option.min_fvg_percent,
+            min_order_block_kline_undulate_percent=option.min_order_block_kline_undulate_percent,
+            max_order_block_kline_undulate_percent=option.max_order_block_kline_undulate_percent,
             **(option.init_kwargs or {})
         )
 

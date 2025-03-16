@@ -153,6 +153,22 @@ class OrderBlock(BaseOrderBlock):
         }
     )
 
+    def get_fvg_percent(self) -> list[float]:
+        """获取订单块的fvg"""
+        klines = self.klines
+        assert len(self.klines) >= 3
+        result = []
+        start, end = 0, len(klines)
+        while start <= end - 3:
+            k1, k3 = klines[start], klines[start + 2]
+            if self.side == 'long':
+                fvg = k3.lowest_price - k1.highest_price
+            else:
+                fvg = k1.lowest_price - k3.highest_price
+            result.append((fvg / k1.highest_price) * 100)
+            start += 1
+        return result
+
     @property
     def identity(self) -> str:
         return utils.format_datetime(self.start_datetime)

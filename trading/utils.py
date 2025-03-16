@@ -14,3 +14,8 @@ def get_undulate(price1: float, price2: float) -> float:
 def get_undulate_percent(price1: float, price2: float) -> float:
     """获取振幅"""
     return get_undulate(price1, price2) * 100
+
+
+def is_workday():
+    """是否是工作日"""
+    return datetime.datetime.now().isoweekday() <= 5
