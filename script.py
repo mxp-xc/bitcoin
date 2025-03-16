@@ -37,6 +37,7 @@ async def main():
                     }
                 },
                 runner_class=BTCRunner,
+                min_fvg_percent=0.1,
                 min_order_block_kline_undulate_percent=0.2,  # 最小振幅
                 max_order_block_kline_undulate_percent=1.5,  # 最大振幅
                 init_kwargs={
