@@ -77,17 +77,28 @@ class BTCRunner2(EntryRunner):
         order_info: OrderInfo
     ) -> OrderInfo:
         order_info = await super()._post_process_order_info(order_block, context, order_info)
+        # 止损多带0.1个点
         loss_price = order_info.price * 0.001
 
         if order_block.side == 'long':
             order_info.preset_stop_loss_price -= loss_price
-            order_info.preset_stop_surplus_price = order_info.price + (
-                order_info.price - order_info.preset_stop_loss_price
-            )
+
+            # 固定止盈工作日1个点, 周末0.5个点
+            if utils.is_workday():
+                # 工作日1个点
+                order_info.preset_stop_surplus_price = order_info.price + 0.01 * order_info.price
+            else:
+                # 周末0.5个点
+                order_info.preset_stop_surplus_price = order_info.price + 0.005 * order_info.price
+
         else:
             order_info.preset_stop_loss_price += loss_price
-            order_info.preset_stop_surplus_price = order_info.price - (
-                order_info.preset_stop_loss_price - order_info.price
-            )
+            # 固定止盈工作日1个点, 周末0.5个点
+            if utils.is_workday():
+                # 工作日1个点
+                order_info.preset_stop_surplus_price = order_info.price - 0.01 * order_info.price
+            else:
+                # 周末0.5个点
+                order_info.preset_stop_surplus_price = order_info.price - 0.005 * order_info.price
 
         return order_info

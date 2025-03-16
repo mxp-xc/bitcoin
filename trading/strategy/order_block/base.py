@@ -196,7 +196,7 @@ class Runner(object):
 
     async def _run(self):
         await asyncio.gather(*[
-            self._watch_my_trades(),
+            # self._watch_my_trades(),
             self._watch_klines()
         ])
 

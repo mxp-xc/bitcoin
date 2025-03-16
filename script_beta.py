@@ -4,7 +4,7 @@ import datetime  # noqa
 
 from conf import settings
 from trading.strategy.order_block.base import CustomRunnerOptions, RunnerManager  # noqa
-from trading.strategy.order_block.btc import BTCRunner  # noqa
+from trading.strategy.order_block.btc import BTCRunner, BTCRunner2  # noqa
 from trading.strategy.order_block.eth import ETH5MRunner  # noqa
 
 
@@ -21,10 +21,8 @@ async def main():
                         'usdt': 5,
                     }
                 },
-                min_fvg_percent=0.1,
+                runner_class=BTCRunner2,
                 min_order_block_kline_undulate_percent=0.2,
-                max_order_block_kline_undulate_percent=1.5,
-                runner_class=BTCRunner,
                 init_kwargs={
                     "middle_entry_undulate": 0.7,  # 中位入场的最低振幅
                 }
