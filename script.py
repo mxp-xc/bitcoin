@@ -41,24 +41,24 @@ async def main():
                     "middle_entry_undulate": 0.7,  # 中位入场的最低振幅
                 }
             ),
-            # CustomRunnerOptions(
-            #     symbol="ETH/USDT:USDT",
-            #     timeframe="5m",
-            #     position_strategy={
-            #         'strategy': 'simple',
-            #         'kwargs': {
-            #             'usdt': 1
-            #         }
-            #     },
-            #     runner_class=ETH5MRunner,
-            #     min_order_block_kline_undulate_percent=0.2,  # 入场需要满足的最小订单块方向的振幅
-            #     init_kwargs={
-            #         "effective_start_time": datetime.timedelta(minutes=50),
-            #         "effective_end_time": datetime.timedelta(hours=2, minutes=40),
-            #         "volume_percent_threshold": 1.9,  # 成交量比例
-            #         "profit_and_loss_ratio": 1.47,  # 盈亏比
-            #     }
-            # ),
+            CustomRunnerOptions(
+                symbol="ETH/USDT:USDT",
+                timeframe="5m",
+                position_strategy={
+                    'strategy': 'simple',
+                    'kwargs': {
+                        'usdt': 1
+                    }
+                },
+                runner_class=ETH5MRunner,
+                min_order_block_kline_undulate_percent=0.2,  # 入场需要满足的最小订单块方向的振幅
+                init_kwargs={
+                    "effective_start_time": datetime.timedelta(minutes=50),
+                    "effective_end_time": datetime.timedelta(hours=2, minutes=40),
+                    "volume_percent_threshold": 1.9,  # 成交量比例
+                    "profit_and_loss_ratio": 1.47,  # 盈亏比
+                }
+            ),
         ]
         rm = RunnerManager(options, exchange, "USDT-FUTURES")
         await rm.run()
