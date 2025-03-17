@@ -3,13 +3,15 @@ import asyncio
 import datetime  # noqa
 
 from conf import settings
-from trading.strategy.order_block.base import CustomRunnerOptions, RunnerManager, RunnerOption
-from trading.strategy.order_block.btc import BTCRunner, BTCRunner2  # noqa
-from trading.strategy.order_block.eth import ETH5MRunner  # noqa
+from trading.strategy.order_block.base import CustomRunnerOptions, RunnerOption
+from trading.strategy.order_block.coin.btc import BTCRunner, BTCRunner2
+from trading.strategy.order_block.coin.eth import ETH5MRunner
+from trading.strategy.order_block.manager import RunnerManager
 
 
 def _test():
     """不用管"""
+    BTCRunner2, ETH5MRunner  # noqa
     return RunnerOption(
         symbol="BTC/USDT:USDT",  # 交易对
         timeframe="30m",  # 时间框架

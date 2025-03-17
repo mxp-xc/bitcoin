@@ -1,18 +1,20 @@
 import asyncio
 import datetime
 import uuid
-from typing import TYPE_CHECKING, Type, Any, TypedDict, Literal
+from typing import TYPE_CHECKING, Type, Any
 
 from ccxt.base.errors import ExchangeError, InsufficientFunds
-from ccxt.base.types import Position, OrderSide, Num
+from ccxt.base.types import Position
 from ccxt.pro import Exchange
 from loguru import logger
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from trading import utils
 from trading.exceptions import StopTradingException
 from trading.helper import OrderBlockParser
 from trading.schema.base import OrderBlock, KLine
+from .position import PositionStrategyTypedDict, PositionStrategy, create_position_strategy
+from .schema import OrderInfo, PlaceOrderContext
 
 if TYPE_CHECKING:
     # for dev
@@ -24,116 +26,6 @@ def _client_oid_default_factory() -> str:
     return f"ob-test-{uid}"
 
 
-class OrderInfo(BaseModel):
-    side: OrderSide
-    price: Num
-    amount: float | None = None
-    preset_stop_surplus_price: float | None = None
-    preset_stop_loss_price: float | None = None
-    # client_oid: Annotated[
-    #     str | None,
-    #     Field(serialization_alias="clientOid", default_factory=_client_oid_default_factory)
-    # ]
-
-
-class PlaceOrderContext(BaseModel):
-    order_blocks: list[OrderBlock]
-    mutex_order_blocs: list[OrderBlock]
-    current_kline: KLine
-
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True
-    )
-
-
-_position_strategy = {}
-
-
-class PositionStrategy(object):
-    """仓位策略"""
-
-    def __init__(self, leverage: int | None = None):
-        if leverage:
-            assert leverage > 0
-        self.leverage = leverage
-
-    def wrap_leverage(self, value: float):
-        if self.leverage is None:
-            return value
-        return value * self.leverage
-
-    async def get_amount(self, order_info: OrderInfo, runner: "Runner") -> float:
-        raise NotImplementedError
-
-
-class SimplePositionStrategy(PositionStrategy):
-    def __init__(self, usdt: float, **kwargs):
-        super().__init__(**kwargs)
-        self.usdt = usdt
-
-    async def get_amount(self, order_info: OrderInfo, runner: "Runner"):
-        if not order_info.price:
-            raise StopTradingException(f"没有入场价格")
-        return self.usdt / order_info.price
-
-
-_position_strategy["simple"] = SimplePositionStrategy
-
-
-class ElasticityPositionStrategy(PositionStrategy):
-    def __init__(
-        self,
-        base_total_usdt: float,
-        base_usdt: float,
-        **kwargs
-    ):
-        assert 0 < base_usdt < base_total_usdt
-        self.base_total_usdt = base_total_usdt
-        self.base_usdt = base_usdt
-        super().__init__(**kwargs)
-
-    def _get_interval(self, x):
-        x += 1
-        n = 0
-        while x > self.base_total_usdt * (2 ** n):
-            n += 1
-        return 2 ** n // 2
-
-    async def _get_base_amount(self, runner: "Runner") -> float:
-        balances = await runner.exchange.fetch_balance({
-            "type": "swap",
-            "productType": runner.product_type
-        })
-        if runner.product_type.startswith("S"):
-            balance = balances["SUSDT"]
-        else:
-            balance = balances["USDT"]
-        total_usdt = balance['total']
-        if self.base_total_usdt > total_usdt:
-            raise StopTradingException(f"当前账号余额: {total_usdt}少于配置的仓位最小金额: {self.base_total_usdt}")
-        interval = self._get_interval(total_usdt)
-        return self.base_usdt * interval
-
-    async def get_amount(self, order_info: OrderInfo, runner: "Runner") -> float:
-        if not order_info.price or not order_info.preset_stop_loss_price:
-            raise StopTradingException("弹性仓位需要存在入场价格和止损价格")
-        # 作为亏损的金额
-        base_amount = await self._get_base_amount(runner)
-        # 计算亏损比例
-        percent = abs(utils.get_undulate_percent(order_info.price, order_info.preset_stop_loss_price))
-        # 实际需要投入的价格
-        amount = base_amount / percent
-        return amount / order_info.price
-
-
-_position_strategy["elasticity"] = ElasticityPositionStrategy
-
-
-class PositionStrategyTypedDict(TypedDict):
-    strategy: Literal["simple", "elasticity"] | None
-    kwargs: dict[str, Any] | None
-
-
 class RunnerOption(BaseModel):
     symbol: str
     timeframe: str
@@ -142,15 +34,6 @@ class RunnerOption(BaseModel):
     min_fvg_percent: float = 0  # 最小
     min_order_block_kline_undulate_percent: float = 0  # 最小订单块振幅
     max_order_block_kline_undulate_percent: float = float('inf')
-
-
-def _create_position_strategy(strategy: str | None, **kwargs) -> PositionStrategy:
-    if strategy is None:
-        strategy = "simple"
-    strategy_class = _position_strategy.get(strategy)
-    if strategy_class is None:
-        raise ValueError(f"{strategy}仓位策略")
-    return strategy_class(**kwargs)
 
 
 class Runner(object):
@@ -166,8 +49,10 @@ class Runner(object):
         max_order_block_kline_undulate_percent: float,
         **kwargs
     ):
+        if timeframe == '1s':
+            raise ValueError("not support 1s timeframe")
         self.timeframe = timeframe
-        self.position_strategy = _create_position_strategy(
+        self.position_strategy: PositionStrategy = create_position_strategy(
             position_strategy.get('strategy'),
             **(position_strategy["kwargs"] or {})
         )
@@ -213,8 +98,16 @@ class Runner(object):
             kline = KLine.from_ccxt(ohlcv[-1])
             if kline.opening_time > last_run_datetime:
                 logger.info("_run_once_with_lock by _watch_klines")
+                await self._sleep_interval()  # 延迟一段时间, 防止bg接口没有最新数据
                 await self._run_once_with_lock()
                 last_run_datetime = kline.opening_time
+
+    async def _sleep_interval(self):
+        second = self.exchange.parse_timeframe(self.timeframe)
+        # 1/30的间隔
+        time_to_wait = min(second / 60, 60)
+        logger.info(f"sleep: {time_to_wait}s")
+        await asyncio.sleep(time_to_wait)
 
     async def _watch_my_trades(self):
         """监听订单成交, 如果出现成交则重新检查订单块下单"""
@@ -484,56 +377,3 @@ class EntryRunner(Runner):
 
 class CustomRunnerOptions(RunnerOption):
     runner_class: Type[Runner]
-
-
-class RunnerManager(object):
-    def __init__(
-        self,
-        options: list[RunnerOption],
-        exchange: Exchange,
-        product_type: str
-    ):
-        assert len({option.symbol for option in options}) == len(options)
-        self.product_type = product_type
-        self.exchange = exchange
-        self.options = options
-
-    def _build_runner(self, option: RunnerOption) -> Runner:
-        if isinstance(option, CustomRunnerOptions):
-            runner_class = option.runner_class
-        else:
-            runner_class = Runner
-        return runner_class(
-            symbol=option.symbol,
-            product_type=self.product_type,
-            exchange=self.exchange,
-            timeframe=option.timeframe,
-            position_strategy=option.position_strategy,
-            min_fvg_percent=option.min_fvg_percent,
-            min_order_block_kline_undulate_percent=option.min_order_block_kline_undulate_percent,
-            max_order_block_kline_undulate_percent=option.max_order_block_kline_undulate_percent,
-            **(option.init_kwargs or {})
-        )
-
-    async def _get_account_info(self):
-        logger.info(f"获取合约账号信息({self.product_type})")
-        balances = await self.exchange.fetch_balance({
-            "type": "swap",
-            "productType": self.product_type
-        })
-        if self.product_type.startswith("S"):
-            balance = balances["SUSDT"]
-        else:
-            balance = balances["USDT"]
-        margin_coin = balances["info"][0]["marginCoin"]
-        logger.info(
-            f"当前账号可用({margin_coin}): {balance['free']}, "
-            f"已用: {balance['used']}, "
-            f"总计: {balance['total']}, "
-        )
-        return balance
-
-    async def run(self):
-        await self._get_account_info()
-        runners = [self._build_runner(option) for option in self.options]
-        await asyncio.gather(*(runner.run() for runner in runners))

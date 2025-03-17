@@ -3,7 +3,7 @@ import datetime
 from typing import TYPE_CHECKING
 
 from trading.schema.base import OrderBlock
-from .base import Runner, PlaceOrderContext, OrderInfo, KLine
+from ..base import Runner, PlaceOrderContext, OrderInfo, KLine
 
 if TYPE_CHECKING:
     # for dev

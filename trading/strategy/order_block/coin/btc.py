@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 from typing import TYPE_CHECKING
 
+from trading import utils
 from trading.schema.base import OrderBlock
-from .base import EntryRunner, PlaceOrderContext, OrderInfo
-from ... import utils
+from ..base import EntryRunner, PlaceOrderContext, OrderInfo
 
 if TYPE_CHECKING:
     # for dev
