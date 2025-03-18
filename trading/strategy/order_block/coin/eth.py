@@ -27,11 +27,6 @@ class ETH5MRunner(Runner):
         self.effective_start_time = effective_start_time
         self.effective_end_time = effective_end_time
 
-    # async def _get_klines(self, since: int | None = None, until: int | None = None) -> list[KLine]:
-    #     start = datetime.datetime(year=2025, month=3, day=12, hour=1, minute=45)
-    #     end = start.replace(hour=7, minute=40)
-    #     return await super()._get_klines(int(start.timestamp() * 1000), int(end.timestamp() * 1000))
-
     async def _choice_order_block_extra(
         self,
         order_block: OrderBlock,

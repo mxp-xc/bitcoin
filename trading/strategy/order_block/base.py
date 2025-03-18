@@ -245,24 +245,61 @@ class Runner(object):
 
         order_info = await self._resolve_order_info(order_block, context)
         order_info = await self._post_process_order_info(order_block, context, order_info)
+        await self._process_mutex_order_locks(context.mutex_order_blocs, context, order_info)
         logger.info(f"{order_info = }. {order_block.order_block_kline}")
         await self._create_order0(order_info)
 
-    async def _choice_order_block(self, context: PlaceOrderContext) -> OrderBlock | None:  # noqa
+    async def _process_mutex_order_locks(
+        self,
+        mutex_order_blocks: list[OrderBlock],
+        context: PlaceOrderContext,
+        order_info: OrderInfo
+    ):
+        logger.info("process mutex order blocks")
+        order_block = await self._choice_order_block(mutex_order_blocks, context)
+        if not order_block:
+            return
+        if order_info.side == 'buy':
+            # 做多, 止盈价格需要小于空订单块入场点
+            new_preset_stop_surplus_price = min(
+                order_info.preset_stop_surplus_price, order_block.order_block_kline.lowest_price
+            )
+        else:
+            # 做空, 止盈价格需要小于空订单块入场点
+            new_preset_stop_surplus_price = max(
+                order_info.preset_stop_surplus_price, order_block.order_block_kline.highest_price
+            )
+
+        if new_preset_stop_surplus_price != order_info.preset_stop_surplus_price:
+            logger.warning(
+                f"modify order preset_stop_surplus_price: "
+                f"{order_info.preset_stop_surplus_price} -> {new_preset_stop_surplus_price}."
+            )
+            order_info.preset_stop_surplus_price = new_preset_stop_surplus_price
+
+    async def _choice_order_block(
+        self,
+        order_blocks: list[OrderBlock],
+        context: PlaceOrderContext,
+    ) -> OrderBlock | None:  # noqa
         if not context.order_blocks:
             return None
-        for order_block in context.order_blocks:
+        for order_block in order_blocks:
             message = []
             order_block_kline = order_block.order_block_kline
             fvg_list = order_block.get_fvg_percent()
             if not fvg_list:
                 raise StopTradingException(f"fvg not found. {order_block}")
-            if fvg_list[0] < self.min_fvg_percent:
-                message.append(f"[fvg: reject] {fvg_list[0]} < {self.min_fvg_percent}. {fvg_list}")
+            if max(fvg_list) < self.min_fvg_percent:
+                message.append(f"[fvg: reject] max fvg: {max(fvg_list)} < {self.min_fvg_percent}. {fvg_list}")
 
             undulate = order_block_kline.get_undulate_percent(
-                side=order_block.side)
-            if undulate < self.min_order_block_kline_undulate_percent or undulate > self.max_order_block_kline_undulate_percent:
+                side=order_block.side  # noqa
+            )
+            if (
+                undulate < self.min_order_block_kline_undulate_percent
+                or undulate > self.max_order_block_kline_undulate_percent
+            ):
                 min_undulate = self.min_order_block_kline_undulate_percent
                 max_undulate = self.max_order_block_kline_undulate_percent
                 message.append(
