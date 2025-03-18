@@ -105,7 +105,7 @@ class Runner(object):
     async def _sleep_interval(self):
         second = self.exchange.parse_timeframe(self.timeframe)
         # 1/30的间隔
-        time_to_wait = min(second / 60, 60)
+        time_to_wait = min(second / 30, 60)
         logger.info(f"sleep: {time_to_wait}s")
         await asyncio.sleep(time_to_wait)
 
