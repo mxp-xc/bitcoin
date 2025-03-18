@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+import datetime
 from functools import cached_property
 
 import ccxt as sync_ccxt
@@ -65,8 +66,22 @@ class _Settings(BaseModel):
         kws.update(kwargs)
         return getattr(module, api_info.exchange)(kws)
 
+    @staticmethod
+    def _config_logger():
+        start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        log_file_name = f"logs/{start_time}.log"
+        logger.add(
+            sink=log_file_name,
+            format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
+            level="DEBUG",
+            rotation="30 MB",  # 当文件大小达到 10MB 时，自动创建新的日志文件
+            retention="90 days",  # 保留最近 7 天的日志文件
+            compression="zip"  # 压缩旧的日志文件为 zip 格式
+        )
+
 
 settings = _Settings()
+settings._config_logger()  # noqa
 
 
 def __log_settings():

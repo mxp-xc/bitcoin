@@ -5,3 +5,4 @@ _settings.py
 _dev.py
 test*.py
 identifier.sqlite
+logs
