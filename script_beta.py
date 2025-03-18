@@ -6,9 +6,10 @@ from conf import settings
 from trading.schema.base import KLine, OrderBlock
 from trading.strategy.order_block.base import CustomRunnerOptions
 from trading.strategy.order_block.coin.btc import BTCRunner, BTCRunner2
+from trading.strategy.order_block.coin.eth import ETH5MRunner
 from trading.strategy.order_block.manager import RunnerManager
 
-BTCRunner, BTCRunner2  # noqa
+BTCRunner, BTCRunner2, ETH5MRunner  # noqa
 
 
 class TestRunner(BTCRunner2):
@@ -37,7 +38,7 @@ async def main():
                 position_strategy={
                     'strategy': 'simple',
                     'kwargs': {
-                        'usdt': 1,
+                        'usdt': 10,
                     }
                 },
                 min_fvg_percent=0.1,
@@ -46,24 +47,25 @@ async def main():
                     "middle_entry_undulate": 0.7,  # 中位入场的最低振幅
                 }
             ),
-            # CustomRunnerOptions(
-            #     symbol="SETHSUSDT",
-            #     timeframe="5m",
-            #     position_strategy={
-            #         'strategy': 'simple',
-            #         'kwargs': {
-            #             'usdt': 5,
-            #         }
-            #     },
-            #     min_order_block_kline_undulate_percent=0.2,
-            #     runner_class=ETH5MRunner,
-            #     init_kwargs={
-            #         "effective_start_time": datetime.timedelta(minutes=50),
-            #         "effective_end_time": datetime.timedelta(hours=2, minutes=40),
-            #         "volume_percent_threshold": 1.9,  # 成交量比例
-            #         "profit_and_loss_ratio": 1.47,  # 盈亏比
-            #     }
-            # ),
+            CustomRunnerOptions(
+                symbol="SETHSUSDT",
+                timeframe="5m",
+                position_strategy={
+                    'strategy': 'simple',
+                    'kwargs': {
+                        'usdt': 19,
+                    }
+                },
+                min_fvg_percent=0.1,
+                min_order_block_kline_undulate_percent=0.2,
+                runner_class=ETH5MRunner,
+                init_kwargs={
+                    "effective_start_time": datetime.timedelta(minutes=50),
+                    "effective_end_time": datetime.timedelta(hours=2, minutes=40),
+                    "volume_percent_threshold": 1.9,  # 成交量比例
+                    "profit_and_loss_ratio": 1.47,  # 盈亏比
+                }
+            ),
         ]
         rm = RunnerManager(options, exchange, "SUSDT-FUTURES")
         await rm.run()
