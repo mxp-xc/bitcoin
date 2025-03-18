@@ -216,7 +216,7 @@ class Runner(object):
         else:
             raise StopTradingException("订单必须携带止损")
         try:
-            await self.exchange.create_limit_order(
+            return await self.exchange.create_limit_order(
                 self.symbol,
                 order_info.side,
                 order_info.amount,
@@ -239,7 +239,7 @@ class Runner(object):
             mutex_order_blocs=mutex_order_blocs,
             current_kline=klines[-1]
         )
-        order_block = await self._choice_order_block(context)
+        order_block = await self._choice_order_block(order_blocks, context)
         if not order_block:
             return
 

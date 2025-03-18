@@ -41,7 +41,7 @@ async def main():
                     }
                 },
                 min_fvg_percent=0.1,
-                runner_class=TestRunner,
+                runner_class=BTCRunner2,
                 init_kwargs={
                     "middle_entry_undulate": 0.7,  # 中位入场的最低振幅
                 }
