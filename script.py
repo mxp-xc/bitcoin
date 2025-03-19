@@ -59,7 +59,6 @@ async def main():
                     }
                 },
                 runner_class=ETH5MRunner,
-                min_fvg_percent=0.1,
                 min_order_block_kline_undulate_percent=0.2,  # 入场需要满足的最小订单块方向的振幅
                 init_kwargs={
                     "effective_start_time": datetime.timedelta(minutes=50),

@@ -53,10 +53,9 @@ async def main():
                 position_strategy={
                     'strategy': 'simple',
                     'kwargs': {
-                        'usdt': 19,
+                        'usdt': 10,
                     }
                 },
-                min_fvg_percent=0.1,
                 min_order_block_kline_undulate_percent=0.2,
                 runner_class=ETH5MRunner,
                 init_kwargs={
