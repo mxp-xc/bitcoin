@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import asyncio
-import datetime  # noqa
+import datetime
+
+from loguru import logger
 
 from conf import settings
 from trading.strategy.order_block.base import CustomRunnerOptions, RunnerOption
@@ -68,7 +70,10 @@ async def main():
             ),
         ]
         rm = RunnerManager(options, exchange, "USDT-FUTURES")
-        await rm.run()
+        try:
+            await rm.run()
+        except:  # noqa
+            logger.exception("Failed to run script.py")
 
 
 if __name__ == '__main__':
