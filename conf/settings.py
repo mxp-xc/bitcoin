@@ -68,7 +68,7 @@ class _Settings(BaseModel):
 
     @staticmethod
     def _config_logger():
-        start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        start_time = datetime.datetime.now().strftime("%Y-%m-%d %H_%M_%S")
         log_file_name = f"logs/{start_time}.log"
         logger.add(
             sink=log_file_name,
