@@ -4,15 +4,16 @@ import uuid
 from typing import TYPE_CHECKING, Type, Any
 
 from ccxt.base.errors import ExchangeError, InsufficientFunds
-from ccxt.base.types import Position
+from ccxt.base.types import Position, Order, PositionSide
 from ccxt.pro import Exchange
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from trading import utils
 from trading.exceptions import StopTradingException
 from trading.helper import OrderBlockParser
 from trading.schema.base import OrderBlock, KLine
+from .break_even import BreakEvenStrategyTypedDict
 from .position import PositionStrategyTypedDict, PositionStrategy, create_position_strategy
 from .schema import OrderInfo, PlaceOrderContext
 
@@ -26,10 +27,113 @@ def _client_oid_default_factory() -> str:
     return f"ob-test-{uid}"
 
 
+class PlaceOrderWrapper(BaseModel):
+    order_block: OrderBlock
+    order_info: OrderInfo
+
+
+class PositionListener(object):
+    def __init__(self, runner: "Runner", order_wrapper: PlaceOrderWrapper, position: Position):
+        self.runner = runner
+        self.order_wrapper = order_wrapper
+        self.position = position
+
+    async def on_open(self):
+        logger.info("on open")
+
+    async def on_close(self):
+        logger.info("on close")
+
+
+class KLinePositionListener(PositionListener):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._stopping = False
+
+    async def on_open(self):
+        logger.info(f"position listener start {self}")
+        asyncio.create_task(self._listen_klines())
+
+    async def on_close(self):
+        logger.info(f"position listener close {self}")
+        self._stopping = True
+
+    async def _listen_klines(self):
+        while not self._stopping:
+            ohlcv_list = await self.runner.exchange.watch_ohlcv(
+                self.runner.symbol,
+                self.runner.timeframe
+            )
+            klines = [KLine.from_ccxt(ohlcv) for ohlcv in ohlcv_list]
+            await self._on_kline(klines)
+
+    async def _on_kline(self, klines: list[KLine]):
+        self._stopping = True
+
+
+class TpslPositionListener(KLinePositionListener):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    async def _on_kline(self, klines: list[KLine]):
+        if self._stopping:
+            return
+        order_block = self.order_wrapper.order_block
+        order_info = self.order_wrapper.order_info
+        assert order_info.price
+        break_even = False
+        kline = None
+        for kline in klines:
+            # 订单块大小
+            delta_price = order_block.order_block_kline.delta_price
+            if order_block.side == 'long':
+                # 做多, 如果出现的最高价格超过了一个订单块距离, 则设置保本
+                if kline.highest_price - order_info.price >= delta_price:
+                    break_even = True
+                    break
+            else:
+                # 做多, 如果出现的最低价格超过了一个订单块距离, 则设置保本
+                if order_info.price - kline.lowest_price >= delta_price:
+                    break_even = True
+                    break
+        if not break_even:
+            return
+        # 修改止损到开仓价格
+        logger.warning(f"订单触发保本条件 {order_info}, 信号k: {kline}")
+        self._stopping = True
+        orders = await self.runner.exchange.fetch_open_orders(
+            self.runner.symbol,
+            params={"planType": "profit_loss"}
+        )
+        for order in orders:
+            info = order['info']
+            if info['planType'] == "loss_plan":
+                logger.warning(f"修改成功: {order_info}")
+                side = "buy" if order_block.side == 'long' else 'sell'
+                await self.runner.exchange.edit_order(
+                    order['id'], self.runner.symbol, 'market', side, order['amount'],
+                    params={
+                        "stopLossPrice": order_info.price
+                    }
+                )
+                return
+        logger.error(f"没有修改: {order_info}")
+
+
+class PositionWrapper(BaseModel):
+    order_wrapper: PlaceOrderWrapper
+    listeners: list[PositionListener] | None = None
+
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True
+    )
+
+
 class RunnerOption(BaseModel):
     symbol: str
     timeframe: str
     position_strategy: PositionStrategyTypedDict
+    break_even_strategy: BreakEvenStrategyTypedDict | None = None
     init_kwargs: dict[str, Any] | None = None
     min_fvg_percent: float = 0  # 最小
     min_order_block_kline_undulate_percent: float = 0  # 最小订单块振幅
@@ -47,6 +151,7 @@ class Runner(object):
         min_fvg_percent: float,
         min_order_block_kline_undulate_percent: float,
         max_order_block_kline_undulate_percent: float,
+        break_even_strategy: BreakEvenStrategyTypedDict | None = None,
         **kwargs
     ):
         if timeframe == '1s':
@@ -56,19 +161,23 @@ class Runner(object):
             position_strategy.get('strategy'),
             **(position_strategy["kwargs"] or {})
         )
+        self.break_even_strategy_options = break_even_strategy
         self.symbol = symbol
         self.product_type = product_type
         self.exchange = exchange
         self.min_fvg_percent = min_fvg_percent
         self.max_order_block_kline_undulate_percent = max_order_block_kline_undulate_percent
         self.min_order_block_kline_undulate_percent = min_order_block_kline_undulate_percent
+        self._stopping = False
+        self._pending_order = {}
+        self._position_order = {}
         self._lock = asyncio.Lock()
 
     async def run(self):
-        while True:
+        while not self._stopping:
             try:
                 await self._run()
-            except StopTradingException:
+            except (StopTradingException, AssertionError):
                 logger.exception(f"stop trading for {self.__class__.__qualname__} {self.symbol} {self.timeframe}")
                 break
             except Exception as exc:  # noqa: ignored
@@ -81,7 +190,8 @@ class Runner(object):
 
     async def _run(self):
         await asyncio.gather(*[
-            # self._watch_my_trades(),
+            self._watch_orders(),
+            self._watch_positions(),
             self._watch_klines()
         ])
 
@@ -93,18 +203,23 @@ class Runner(object):
         await self._run_once_with_lock()
         await prepare_task
 
-        while True:
-            ohlcv = await self.exchange.watch_ohlcv(self.symbol, self.timeframe)
-            kline = KLine.from_ccxt(ohlcv[-1])
-            if kline.opening_time > last_run_datetime:
-                logger.info(
+        while not self._stopping:
+            ohlcv_list = await self.exchange.watch_ohlcv(self.symbol, self.timeframe)
+            # 判断止盈止损
+            klines = [KLine.from_ccxt(ohlcv) for ohlcv in ohlcv_list]
+            last_kline = klines[-1]
+            if last_kline.opening_time > last_run_datetime:
+                logger.warning(
                     f"close kline: {utils.format_datetime(last_run_datetime)} -> "
-                    f"{utils.format_datetime(kline.opening_time)}"
+                    f"{utils.format_datetime(last_kline.opening_time)}"
                 )
-                logger.info("_run_once_with_lock by _watch_klines")
-                await self._sleep_interval()  # 延迟一段时间, 防止bg接口没有最新数据
-                await self._run_once_with_lock()
-                last_run_datetime = kline.opening_time
+                await self._on_kline_close("_watch_klines")
+                last_run_datetime = last_kline.opening_time
+
+    async def _on_kline_close(self, source):
+        logger.info(f"_wake_up_run_once by {source}")
+        await self._sleep_interval()  # 延迟一段时间, 防止bg接口没有最新数据
+        await self._run_once_with_lock()
 
     async def _sleep_interval(self):
         second = self.exchange.parse_timeframe(self.timeframe)
@@ -113,13 +228,101 @@ class Runner(object):
         logger.info(f"sleep: {time_to_wait}s")
         await asyncio.sleep(time_to_wait)
 
-    async def _watch_my_trades(self):
-        """监听订单成交, 如果出现成交则重新检查订单块下单"""
+    async def _watch_positions(self):
+        """监听平仓事件, 当平仓的时候, 把position_order移除"""
         logger.info("watch my trades")
         while True:
-            await self.exchange.watch_my_trades(self.symbol)
-            logger.info("_run_once_with_lock by _watch_my_trades")
-            await self._run_once_with_lock()
+            positions = await self.exchange.watch_positions([self.symbol])
+            for position in positions:
+                info = position['info']
+                identity = f"{position['symbol']}-{position['side']}"
+                logger.info(f"{identity} position change")
+                if not info['available'] == '0':
+                    logger.info("ignored position change")
+                    continue
+                logger.info(f"close position: {identity}")
+                await self._remove_position_order(position['side'])
+
+    async def _watch_orders(self):
+        """监听订单成交, 如果出现成交则重新检查订单块下单"""
+        logger.info("watch orders")
+        while True:
+            orders = await self.exchange.watch_orders(self.symbol)
+            try:
+                await self._update_order(orders)
+            except Exception as exc:
+                raise StopTradingException("记录订单信息失败") from exc
+
+    async def _add_position_order(self, side: PositionSide, order_wrapper: PlaceOrderWrapper, position: Position):
+        logger.info(f"add position order: {side}. {order_wrapper.order_info}")
+        wrapper = PositionWrapper(
+            order_wrapper=order_wrapper,
+            listeners=[TpslPositionListener(self, order_wrapper, position)],
+        )
+        self._position_order[side] = wrapper
+        await asyncio.gather(*(listener.on_open() for listener in wrapper.listeners))
+
+    async def _remove_position_order(self, side: PositionSide):
+        wrapper: PositionWrapper | None = self._position_order.pop(side, None)
+        logger.info(f"remove position order: {side}, {wrapper}")
+        if wrapper and wrapper.listeners:
+            await asyncio.gather(*(listener.on_close() for listener in wrapper.listeners))
+
+    async def _listen_break_even(self, order_wrapper: PlaceOrderWrapper):
+        pass
+
+    async def _update_order(self, orders: list[Order]):
+        for order in orders:
+            if order['symbol'] != self.symbol:
+                logger.error(f"invalid symbol. {order['symbol']} != {self.symbol}")
+                continue
+            client_order_id = order['clientOrderId']
+            if client_order_id not in self._position_order and client_order_id not in self._pending_order:
+                logger.info(f"ignore order: {client_order_id}")
+                continue
+
+            info = order['info']
+            trade_side = info.get('tradeSide', None)
+            status = info.get('status', None)
+            pos_side = info.get('posSide', None)
+            side = info.get('side', None)
+            logger.info(
+                f"receive order: {client_order_id = }, {trade_side = }, {status = }, {pos_side = }, {side = }"
+            )
+
+            if trade_side == 'open':
+                # 开仓
+                if status == "live" and client_order_id in self._pending_order:
+                    logger.info(f"live order: {client_order_id}")
+                elif status == "canceled":
+                    self._pending_order.pop(client_order_id, None)
+                    logger.info(f"canceled {client_order_id}")
+                elif status == "filled":
+                    logger.info(f"filled {client_order_id}")
+                    ow = self._pending_order.pop(client_order_id)
+                    assert ow and pos_side
+                    await self._process_open_position(pos_side, ow)
+                else:
+                    logger.error(f"unsupported state: {status}")
+                    self._pending_order.pop(client_order_id, None)
+                    assert pos_side
+                    await self._remove_position_order(pos_side)
+            elif trade_side == 'close':
+                # 平仓
+                logger.info(f"closed position order: {client_order_id}")
+            else:
+                logger.info(f"order: {order['id']} trade size: {trade_side} not in ('open' or 'close')")
+
+    async def _process_open_position(self, pos_side: str, ow: PlaceOrderWrapper):
+        # 获取仓位信息
+        positions = await self.exchange.fetch_positions([self.symbol])
+        for position in positions:
+            if position['info']['holdSide'] != pos_side:
+                continue
+
+            await self._add_position_order(pos_side, ow, position)
+            return
+        logger.warning(f"position not found: {ow}")
 
     async def _get_klines(self, since: int | None = None, until: int | None = None) -> list[KLine]:
         since = since or int((datetime.datetime.now() - datetime.timedelta(days=60)).timestamp() * 1000)
@@ -219,6 +422,11 @@ class Runner(object):
             params["stopLoss"] = {"stopPrice": order_info.preset_stop_loss_price}
         else:
             raise StopTradingException("订单必须携带止损")
+        if order_info.client_order_id:
+            params["clientOrderId"] = order_info.client_order_id
+        else:
+            raise StopTradingException("没有自定义order_id")
+
         try:
             return await self.exchange.create_limit_order(
                 self.symbol,
@@ -248,9 +456,16 @@ class Runner(object):
             return
 
         order_info = await self._resolve_order_info(order_block, context)
+        order_info.client_order_id = _client_oid_default_factory()
         order_info = await self._post_process_order_info(order_block, context, order_info)
         await self._process_mutex_order_locks(context.mutex_order_blocs, context, order_info)
         logger.info(f"{order_info = }. {order_block.order_block_kline}")
+
+        if not order_info.client_order_id:
+            raise StopTradingException("client order id is None")
+        self._pending_order[order_info.client_order_id] = PlaceOrderWrapper(
+            order_block=order_block, order_info=order_info
+        )
         await self._create_order0(order_info)
 
     async def _process_mutex_order_locks(
@@ -405,14 +620,18 @@ class EntryRunner(Runner):
         if order_block.side == 'long':
             # 做多止损下影线
             preset_stop_loss_price = kline.lowest_price
+            preset_stop_surplus_price = price + abs(price - preset_stop_loss_price)
         else:
             # 做空止损上影线
             preset_stop_loss_price = kline.highest_price
+            preset_stop_surplus_price = price - abs(price - preset_stop_loss_price)
 
+        # 止盈一个点
         return OrderInfo(
             side='buy' if order_block.side == 'long' else 'sell',
             price=price,
-            preset_stop_loss_price=preset_stop_loss_price
+            preset_stop_loss_price=preset_stop_loss_price,
+            preset_stop_surplus_price=preset_stop_surplus_price
         )
 
 

@@ -153,6 +153,11 @@ class OrderBlock(BaseOrderBlock):
         }
     )
 
+    def __str__(self):
+        return f"OrderBlock(side={self.side}, kline={self.order_block_kline})"
+
+    __repr__ = __str__
+
     def get_fvg_percent(self) -> list[float]:
         """获取订单块的fvg"""
         klines = self.klines

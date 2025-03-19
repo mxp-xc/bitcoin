@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from typing import TYPE_CHECKING
 
-from ccxt.base.types import OrderSide, Num
+from ccxt.base.types import OrderSide
 from pydantic import BaseModel, ConfigDict
 
 from trading.schema.base import OrderBlock, KLine
@@ -13,14 +13,11 @@ if TYPE_CHECKING:
 
 class OrderInfo(BaseModel):
     side: OrderSide
-    price: Num
+    price: float | None = None
     amount: float | None = None
     preset_stop_surplus_price: float | None = None
     preset_stop_loss_price: float | None = None
-    # client_oid: Annotated[
-    #     str | None,
-    #     Field(serialization_alias="clientOid", default_factory=_client_oid_default_factory)
-    # ]
+    client_order_id: str | None = None
 
 
 class PlaceOrderContext(BaseModel):
