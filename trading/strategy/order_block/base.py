@@ -97,6 +97,10 @@ class Runner(object):
             ohlcv = await self.exchange.watch_ohlcv(self.symbol, self.timeframe)
             kline = KLine.from_ccxt(ohlcv[-1])
             if kline.opening_time > last_run_datetime:
+                logger.info(
+                    f"close kline: {utils.format_datetime(last_run_datetime)} -> "
+                    f"{utils.format_datetime(kline.opening_time)}"
+                )
                 logger.info("_run_once_with_lock by _watch_klines")
                 await self._sleep_interval()  # 延迟一段时间, 防止bg接口没有最新数据
                 await self._run_once_with_lock()
