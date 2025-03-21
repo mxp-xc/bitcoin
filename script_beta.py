@@ -36,13 +36,14 @@ async def main():
                 symbol="SBTCSUSDT",
                 timeframe="30m",
                 position_strategy={
-                    'strategy': 'simple',
+                    'strategy': 'elasticity',
                     'kwargs': {
-                        'usdt': 10,
+                        'base_total_usdt': 2000,
+                        'base_usdt': 10
                     }
                 },
                 min_fvg_percent=0.1,
-                runner_class=BTCRunner2,
+                runner_class=BTCRunner,
                 init_kwargs={
                     "middle_entry_undulate": 0.7,  # 中位入场的最低振幅
                 }
@@ -51,9 +52,10 @@ async def main():
                 symbol="SETHSUSDT",
                 timeframe="5m",
                 position_strategy={
-                    'strategy': 'simple',
+                    'strategy': 'elasticity',
                     'kwargs': {
-                        'usdt': 10,
+                        'base_total_usdt': 2000,
+                        'base_usdt': 10
                     }
                 },
                 min_order_block_kline_undulate_percent=0.2,
