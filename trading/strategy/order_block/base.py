@@ -7,15 +7,17 @@ from ccxt.base.errors import ExchangeError, InsufficientFunds
 from ccxt.base.types import Position, Order, PositionSide
 from ccxt.pro import Exchange
 from loguru import logger
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel
 
 from trading import utils
 from trading.exceptions import StopTradingException
 from trading.helper import OrderBlockParser
 from trading.schema.base import OrderBlock, KLine
+from .break_even import BreakEvenListenerFactory
 from .break_even import BreakEvenStrategyTypedDict
+from .listener import PositionWrapper
 from .position import PositionStrategyTypedDict, PositionStrategy, create_position_strategy
-from .schema import OrderInfo, PlaceOrderContext
+from .schema import OrderInfo, PlaceOrderContext, PlaceOrderWrapper
 
 if TYPE_CHECKING:
     # for dev
@@ -25,108 +27,6 @@ if TYPE_CHECKING:
 def _client_oid_default_factory() -> str:
     uid = str(uuid.uuid4()).replace("-", "")
     return f"ob-test-{uid}"
-
-
-class PlaceOrderWrapper(BaseModel):
-    order_block: OrderBlock
-    order_info: OrderInfo
-
-
-class PositionListener(object):
-    def __init__(self, runner: "Runner", order_wrapper: PlaceOrderWrapper, position: Position):
-        self.runner = runner
-        self.order_wrapper = order_wrapper
-        self.position = position
-
-    async def on_open(self):
-        logger.info("on open")
-
-    async def on_close(self):
-        logger.info("on close")
-
-
-class KLinePositionListener(PositionListener):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._stopping = False
-
-    async def on_open(self):
-        logger.info(f"position listener start {self}")
-        asyncio.create_task(self._listen_klines())
-
-    async def on_close(self):
-        logger.info(f"position listener close {self}")
-        self._stopping = True
-
-    async def _listen_klines(self):
-        while not self._stopping:
-            ohlcv_list = await self.runner.exchange.watch_ohlcv(
-                self.runner.symbol,
-                self.runner.timeframe
-            )
-            klines = [KLine.from_ccxt(ohlcv) for ohlcv in ohlcv_list]
-            await self._on_kline(klines)
-
-    async def _on_kline(self, klines: list[KLine]):
-        self._stopping = True
-
-
-class TpslPositionListener(KLinePositionListener):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
-    async def _on_kline(self, klines: list[KLine]):
-        if self._stopping:
-            return
-        order_block = self.order_wrapper.order_block
-        order_info = self.order_wrapper.order_info
-        assert order_info.price
-        break_even = False
-        kline = None
-        for kline in klines:
-            # 订单块大小
-            delta_price = order_block.order_block_kline.delta_price
-            if order_block.side == 'long':
-                # 做多, 如果出现的最高价格超过了一个订单块距离, 则设置保本
-                if kline.highest_price - order_info.price >= delta_price:
-                    break_even = True
-                    break
-            else:
-                # 做多, 如果出现的最低价格超过了一个订单块距离, 则设置保本
-                if order_info.price - kline.lowest_price >= delta_price:
-                    break_even = True
-                    break
-        if not break_even:
-            return
-        # 修改止损到开仓价格
-        logger.warning(f"订单触发保本条件 {order_info}, 信号k: {kline}")
-        self._stopping = True
-        orders = await self.runner.exchange.fetch_open_orders(
-            self.runner.symbol,
-            params={"planType": "profit_loss"}
-        )
-        for order in orders:
-            info = order['info']
-            if info['planType'] == "loss_plan":
-                logger.warning(f"修改成功: {order_info}")
-                side = "buy" if order_block.side == 'long' else 'sell'
-                await self.runner.exchange.edit_order(
-                    order['id'], self.runner.symbol, 'market', side, order['amount'],
-                    params={
-                        "stopLossPrice": order_info.price
-                    }
-                )
-                return
-        logger.error(f"没有修改: {order_info}")
-
-
-class PositionWrapper(BaseModel):
-    order_wrapper: PlaceOrderWrapper
-    listeners: list[PositionListener] | None = None
-
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True
-    )
 
 
 class RunnerOption(BaseModel):
@@ -141,6 +41,8 @@ class RunnerOption(BaseModel):
 
 
 class Runner(object):
+    break_even_listener_factory: BreakEvenListenerFactory | None
+
     def __init__(
         self,
         symbol: str,
@@ -161,7 +63,10 @@ class Runner(object):
             position_strategy.get('strategy'),
             **(position_strategy["kwargs"] or {})
         )
-        self.break_even_strategy_options = break_even_strategy
+        if break_even_strategy:
+            self.break_even_listener_factory = BreakEvenListenerFactory(break_even_strategy)
+        else:
+            self.break_even_listener_factory = None
         self.symbol = symbol
         self.product_type = product_type
         self.exchange = exchange
@@ -257,7 +162,7 @@ class Runner(object):
         logger.info(f"add position order: {side}. {order_wrapper.order_info}")
         wrapper = PositionWrapper(
             order_wrapper=order_wrapper,
-            listeners=[TpslPositionListener(self, order_wrapper, position)],
+            listeners=self._create_position_listeners(order_wrapper, position),
         )
         self._position_order[side] = wrapper
         await asyncio.gather(*(listener.on_open() for listener in wrapper.listeners))
@@ -268,8 +173,15 @@ class Runner(object):
         if wrapper and wrapper.listeners:
             await asyncio.gather(*(listener.on_close() for listener in wrapper.listeners))
 
-    async def _listen_break_even(self, order_wrapper: PlaceOrderWrapper):
-        pass
+    def _create_position_listeners(self, order_wrapper: PlaceOrderWrapper, position: Position):
+        if self.break_even_listener_factory is None:
+            return []
+        break_even_listener = self.break_even_listener_factory.create_listener(
+            runner=self,
+            order_wrapper=order_wrapper,
+            position=position
+        )
+        return [break_even_listener]
 
     async def _update_order(self, orders: list[Order]):
         for order in orders:

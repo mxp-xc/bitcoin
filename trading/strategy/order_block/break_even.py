@@ -1,67 +1,129 @@
 # -*- coding: utf-8 -*-
-from typing import Any, TypedDict, Literal, TYPE_CHECKING
+import asyncio
+from typing import Any, TypedDict, Literal
 
+from loguru import logger
+
+from conf import settings
 from trading.schema.base import KLine
-from .schema import OrderInfo
-
-if TYPE_CHECKING:
-    from .base import Runner
+from .listener import KLinePositionListener
 
 _break_event_strategy = {}
 
 
 class BreakEvenStrategyTypedDict(TypedDict):
-    strategy: Literal["simple", "loss_price_base"]
+    strategy: Literal["order_block_price_base", "loss_price_base"]
     kwargs: dict[str, Any] | None
 
 
-class BreakEvenStrategy(object):
-    """保本策略"""
+class BreakEvenListenerFactory(object):
+    def __init__(self, options: BreakEvenStrategyTypedDict):
+        strategy = options.get('strategy', None)
+        listener_class = _break_event_strategy.get(strategy)
+        assert listener_class
+        self.listener_class = listener_class
+        self.init_kwargs = options.get('kwargs') or {}
+
+    def create_listener(self, *args, **kwargs):
+        return self.listener_class(*args, **kwargs, **self.init_kwargs)
 
 
-class SimpleBreakEvenStrategy(BreakEvenStrategy):
-    pass
+class TpslPositionListener(KLinePositionListener):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        assert self.order_wrapper.order_info.price
 
-
-class LossPricePercentStrategy(BreakEvenStrategy):
-    """基于止损的保本策略, 当止盈到达给定的止损的时候, 就会"""
-
-    def __init__(
-        self,
-        percent: float,
-        order_info: OrderInfo
-    ):
-        assert percent > 0
-        self.order_info = order_info
-        self.percent = percent
-        self.profit_price = self._calc_min_profit_price()
-        self.last_price = -1.0
-        self._trigger = False
-
-    def _calc_min_profit_price(self) -> float:
-        delta_price = abs(self.order_info.price - self.order_info.preset_stop_loss_price) * self.percent
-        if self.order_info.side == 'buy':
-            return self.order_info.price + delta_price
-        return self.order_info.price - delta_price
-
-    async def get_profit_price(self, kline: KLine) -> float | None:
-        """获取止盈价格, 返回None说明没有止盈"""
-        if self._trigger:
-            return self.profit_price
-        if self.order_info.side == 'buy':
-            self.last_price = max(self.last_price, kline.highest_price)
-            if self.last_price >= self.profit_price:
-                self._trigger = True
-                return True
+    async def _on_kline(self, klines: list[KLine]):
+        for kline in klines:
+            # 订单块大小
+            break_even = await self._need_break_even(kline)
+            if break_even:
+                break
         else:
-            self.last_price = min(self.last_price, kline.lowest_price)
-            if self.last_price <= self.profit_price:
-                self._trigger = True
+            return
+        self._stopping = True
 
-        if self._trigger:
-            return self.profit_price
+        order_info = self.order_wrapper.order_info
+        # 修改止损到开仓价格
+        logger.warning(f"订单触发保本条件 {self.order_wrapper.order_block}, 信号k: {kline}")
+        orders = await self.runner.exchange.fetch_open_orders(
+            self.runner.symbol,
+            params={"planType": "profit_loss"}
+        )
+        for order in orders:
+            info = order['info']
+            if info['planType'] == "loss_plan":
+                logger.warning(f"修改成功: {order_info}")
+                side = "buy" if self.order_wrapper.order_block.side == 'long' else 'sell'
+                await self.runner.exchange.edit_order(
+                    order['id'], self.runner.symbol, 'market', side, order['amount'],
+                    params={
+                        "stopLossPrice": order_info.price
+                    }
+                )
+                return
+        logger.error(f"未找到保本订单: {order_info}")
+
+    async def _need_break_even(self, kline: KLine) -> bool:
+        raise NotImplementedError
 
 
-class BreakEvenManager(object):
-    def __init__(self, runner: "Runner"):
-        self.runner = runner
+class _PercentTpslListener(TpslPositionListener):
+    def __init__(self, *args, percent: float, **kwargs):
+        super().__init__(*args, **kwargs)
+        assert percent > 0
+        self.percent = percent
+
+    def _start_debug_log(self):
+        if not settings.debug:
+            return
+
+        async def debug_log():
+            while not self._stopping:
+                self._log_break_even_price()
+                await asyncio.sleep(60)
+
+        asyncio.create_task(debug_log())
+
+    def _log_break_even_price(self):
+        pass
+
+
+class LossPricePercentTpslListener(_PercentTpslListener):
+    """基于止损的保本策略, 当止盈到达给定的止损的百分比时候, 就会设置保本止损"""
+
+    def __init__(self, *args, percent: float, **kwargs):
+        super().__init__(*args, percent=percent, **kwargs)
+        order_info = self.order_wrapper.order_info
+        self.loss_price_delta = abs(order_info.price - order_info.preset_stop_loss_price) * self.percent
+        self._start_debug_log()
+
+    def _log_break_even_price(self):
+        order_info = self.order_wrapper.order_info
+        if order_info.side == 'buy':
+            break_event_price = order_info.price + self.loss_price_delta
+        else:
+            break_event_price = order_info.price - self.loss_price_delta
+        logger.info(f"监听订单{order_info}. 目标保本价格为: {break_event_price}")
+
+    async def _need_break_even(self, kline: KLine) -> bool:
+        order_info = self.order_wrapper.order_info
+
+        if order_info.side == 'buy':
+            # 做多, 最高价格距离开仓价格为达到百分比则触发保本
+            return kline.highest_price >= order_info.price + self.loss_price_delta
+        # 做空, 最低价格距离开仓价格为达到百分比则触发保本
+        return kline.lowest_price <= order_info.price - self.loss_price_delta
+
+
+_break_event_strategy['loss_price_base'] = LossPricePercentTpslListener
+
+
+class OrderBlockPercentTpslListener(_PercentTpslListener):
+    """基于订单块大小的止损的保本策略, 当止盈到达订单块的百分比时候, 就会设置保本止损"""
+
+    def _log_break_even_price(self):
+        super()._log_break_even_price()
+
+    async def _need_break_even(self, kline: KLine) -> bool:
+        pass

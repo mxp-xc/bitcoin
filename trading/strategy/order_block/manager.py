@@ -36,6 +36,7 @@ class RunnerManager(object):
             timeframe=option.timeframe,
             position_strategy=option.position_strategy,
             min_fvg_percent=option.min_fvg_percent,
+            break_even_strategy=option.break_even_strategy,
             min_order_block_kline_undulate_percent=option.min_order_block_kline_undulate_percent,
             max_order_block_kline_undulate_percent=option.max_order_block_kline_undulate_percent,
             **(option.init_kwargs or {})

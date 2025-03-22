@@ -11,6 +11,8 @@ from .schema import ExchangeApiInfo
 
 
 class _Settings(BaseModel):
+    debug: bool = True
+
     proxy_http_host: str | None = None
 
     proxy_http_port: int | None = None

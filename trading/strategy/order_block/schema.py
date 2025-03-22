@@ -20,6 +20,11 @@ class OrderInfo(BaseModel):
     client_order_id: str | None = None
 
 
+class PlaceOrderWrapper(BaseModel):
+    order_block: OrderBlock
+    order_info: OrderInfo
+
+
 class PlaceOrderContext(BaseModel):
     order_blocks: list[OrderBlock]
     mutex_order_blocs: list[OrderBlock]
