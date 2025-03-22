@@ -18,9 +18,10 @@ def _test():
         symbol="BTC/USDT:USDT",  # 交易对
         timeframe="30m",  # 时间框架
         position_strategy={  # 仓位策略,
-            'strategy': 'simple',  # 简单策略
+            'strategy': 'elasticity',  # 简单策略
             'kwargs': {
-                'usdt': 5  # 固定5u, 会计算杠杆
+                'base_total_usdt': 100,  # 固定5u, 会计算杠杆
+                'base_usdt': 2  # 固定5u, 会计算杠杆
             }
         },
         min_fvg_percent=0.1,  # 第一个fvg需要满足的最小值比例. 默认为0
@@ -36,9 +37,10 @@ async def main():
                 symbol="BTC/USDT:USDT",
                 timeframe="30m",
                 position_strategy={
-                    'strategy': 'simple',
+                    'strategy': 'elasticity',
                     'kwargs': {
-                        'usdt': 1
+                        'base_total_usdt': 100,
+                        'base_usdt': 2
                     }
                 },
                 runner_class=BTCRunner,
@@ -53,9 +55,10 @@ async def main():
                 symbol="ETH/USDT:USDT",
                 timeframe="5m",
                 position_strategy={
-                    'strategy': 'simple',
+                    'strategy': 'elasticity',
                     'kwargs': {
-                        'usdt': 1
+                        'base_total_usdt': 100,
+                        'base_usdt': 2
                     }
                 },
                 runner_class=ETH5MRunner,

@@ -23,7 +23,6 @@ class BTCRunner(EntryRunner):
         3. 周末, 0.4~0.7, 0.7~1.5入场规则和工作日一样. 止损多带0.2, 下单金额为止损总仓位5%的金额. 盈亏1:1
         4. 工作日, 当fvg < 0.05%视为不存在fvg
         """
-        order_info = await super()._post_process_order_info(order_block, context, order_info)
         price = order_info.price
         preset_stop_loss_price = order_info.preset_stop_loss_price
         if order_block.side == 'long':
@@ -49,6 +48,7 @@ class BTCRunner(EntryRunner):
 
         order_info.preset_stop_surplus_price = preset_stop_surplus_price
         order_info.preset_stop_loss_price = preset_stop_loss_price
+        order_info = await super()._post_process_order_info(order_block, context, order_info)
         return order_info
 
 
