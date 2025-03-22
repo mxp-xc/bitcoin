@@ -2,6 +2,8 @@
 import asyncio
 import datetime  # noqa
 
+from loguru import logger
+
 from conf import settings
 from trading.schema.base import KLine, OrderBlock
 from trading.strategy.order_block.base import CustomRunnerOptions
@@ -33,33 +35,35 @@ async def main():
         exchange.set_sandbox_mode(True)
         options = [
             CustomRunnerOptions(
-                symbol="SBTCSUSDT",
+                symbol="SBTC/SUSDT:SUSDT",
                 timeframe="30m",
                 position_strategy={
                     'strategy': 'elasticity',
                     'kwargs': {
                         'base_total_usdt': 2000,
-                        'base_usdt': 10
+                        'base_usdt': 50
                     }
                 },
-                min_fvg_percent=0.1,
                 runner_class=BTCRunner,
+                min_fvg_percent=0.1,
+                min_order_block_kline_undulate_percent=0.2,  # 最小振幅
+                max_order_block_kline_undulate_percent=1.5,  # 最大振幅
                 init_kwargs={
                     "middle_entry_undulate": 0.7,  # 中位入场的最低振幅
                 }
             ),
             CustomRunnerOptions(
-                symbol="SETHSUSDT",
+                symbol="SETH/SUSDT:SUSDT",
                 timeframe="5m",
                 position_strategy={
                     'strategy': 'elasticity',
                     'kwargs': {
                         'base_total_usdt': 2000,
-                        'base_usdt': 10
+                        'base_usdt': 50
                     }
                 },
-                min_order_block_kline_undulate_percent=0.2,
                 runner_class=ETH5MRunner,
+                min_order_block_kline_undulate_percent=0.2,  # 入场需要满足的最小订单块方向的振幅
                 init_kwargs={
                     "effective_start_time": datetime.timedelta(minutes=50),
                     "effective_end_time": datetime.timedelta(hours=2, minutes=40),
@@ -69,7 +73,10 @@ async def main():
             ),
         ]
         rm = RunnerManager(options, exchange, "SUSDT-FUTURES")
-        await rm.run()
+        try:
+            await rm.run()
+        except:  # noqa
+            logger.exception("Failed to run script.py")
 
 
 if __name__ == '__main__':
