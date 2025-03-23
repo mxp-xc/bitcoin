@@ -15,7 +15,9 @@ BTCRunner, BTCRunner2, ETH5MRunner  # noqa
 
 
 class TestRunner(BTCRunner2):
-    async def _get_klines(self, since: int | None = None, until: int | None = None) -> list[KLine]:
+    async def _get_klines(
+        self, since: int | None = None, until: int | None = None, timeframe: str = None
+    ) -> list[KLine]:
         fmt = '%Y-%m-%d %H:%M'
         start = datetime.datetime.strptime('2025-03-16 18:30', fmt)
         end = datetime.datetime.strptime('2025-03-17 16:00', fmt)
@@ -46,6 +48,12 @@ async def main():
                 },
                 runner_class=BTCRunner,
                 min_fvg_percent=0.1,
+                break_even_strategy={
+                    'strategy': 'loss_price_base',
+                    'kwargs': {
+                        'percent': 0.9
+                    }
+                },
                 min_order_block_kline_undulate_percent=0.2,  # 最小振幅
                 max_order_block_kline_undulate_percent=1.5,  # 最大振幅
                 init_kwargs={
@@ -60,6 +68,12 @@ async def main():
                     'kwargs': {
                         'base_total_usdt': 2000,
                         'base_usdt': 50
+                    }
+                },
+                break_even_strategy={
+                    'strategy': 'loss_price_base',
+                    'kwargs': {
+                        'percent': 0.9
                     }
                 },
                 runner_class=ETH5MRunner,
