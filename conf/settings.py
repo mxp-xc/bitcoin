@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import datetime
+import sys
 from functools import cached_property
 
 import ccxt as sync_ccxt
@@ -84,6 +85,11 @@ class _Settings(BaseModel):
 
 settings = _Settings()
 settings._config_logger()  # noqa
+
+if sys.platform == 'win32':
+    import asyncio
+
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 
 def __log_settings():
