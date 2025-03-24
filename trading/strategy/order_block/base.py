@@ -94,9 +94,13 @@ class Runner(object):
             await self._run_once()
 
     async def _run(self):
-        await asyncio.gather(*[
+        pre_task = asyncio.gather(*[
             self._watch_orders(),
             self._watch_positions(),
+        ])
+        await asyncio.sleep(3)
+        await asyncio.gather(*[
+            pre_task,
             self._watch_klines()
         ])
 
@@ -135,8 +139,8 @@ class Runner(object):
 
     async def _watch_positions(self):
         """监听平仓事件, 当平仓的时候, 把position_order移除"""
-        logger.info("watch my trades")
-        while True:
+        logger.info("start _watch_positions")
+        while not self._stopping:
             positions = await self.exchange.watch_positions([self.symbol])
             for position in positions:
                 info = position['info']
@@ -148,15 +152,18 @@ class Runner(object):
                 logger.info(f"close position: {identity}")
                 await self._remove_position_order(position['side'])
 
+        logger.info("stop _watch_positions")
+
     async def _watch_orders(self):
         """监听订单成交, 如果出现成交则重新检查订单块下单"""
-        logger.info("watch orders")
-        while True:
+        logger.info("start watch orders")
+        while not self._stopping:
             orders = await self.exchange.watch_orders(self.symbol)
             try:
                 await self._update_order(orders)
             except Exception as exc:
                 raise StopTradingException("记录订单信息失败") from exc
+        logger.info("stop watch orders")
 
     async def _add_position_order(self, side: PositionSide, order_wrapper: PlaceOrderWrapper, position: Position):
         logger.info(f"add position order: {side}. {order_wrapper.order_info}")
@@ -490,12 +497,14 @@ class Runner(object):
         await self._cancel_all_orders()
         if 'long' not in position_map and long_order_blocks:
             # 存在多单订单块并且没有多单持仓, 才下订单
+            logger.info("start place long order")
             await self._create_order(long_order_blocks, short_order_blocks, klines)
         elif long_order_blocks:
             logger.info(f"当前仓位存在多单")
 
         if 'short' not in position_map and short_order_blocks:
             # 存在空单订单块并且没有多单持仓, 才下订单
+            logger.info("start place short order")
             await self._create_order(short_order_blocks, long_order_blocks, klines)
         elif short_order_blocks:
             logger.info(f"当前仓位存在空单")

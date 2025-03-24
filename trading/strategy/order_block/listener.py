@@ -51,6 +51,8 @@ class KLinePositionListener(PositionListener):
 
     async def _listen_klines(self):
         logger.info(f"{self.__class__.__qualname__} start watch ohlcv. {self.timeframe = }")
+        # init
+        await self.runner.exchange.watch_ohlcv(self.runner.symbol, self.timeframe)
         while not self._stopping:
             ohlcv_list = await self.runner.exchange.watch_ohlcv(
                 self.runner.symbol,
