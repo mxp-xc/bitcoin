@@ -61,13 +61,19 @@ class _Settings(BaseModel):
                 "maxRetriesOnFailure": 3
             }
         }
+        if api_info.exchange == "bitget":
+            # 令bitget支持监听1s的频道
+            kws["options"]["timeframes"] = {
+                "1s": "1s"
+            }
         proxy = self.get_proxy_http_base_url()
         if proxy:
             kws["https_proxy"] = proxy
             kws["ws_proxy"] = proxy
 
         kws.update(kwargs)
-        return getattr(module, api_info.exchange)(kws)
+        exchange = getattr(module, api_info.exchange)(kws)
+        return exchange
 
     @staticmethod
     def _config_logger():

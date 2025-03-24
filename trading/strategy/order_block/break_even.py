@@ -1,18 +1,23 @@
 # -*- coding: utf-8 -*-
 import asyncio
-from typing import Any, TypedDict, Literal
+from typing import Any, TypedDict, Literal, TYPE_CHECKING, NotRequired
 
+from ccxt.base.exchange import Exchange
 from loguru import logger
 
 from conf import settings
 from trading.schema.base import KLine
 from .listener import KLinePositionListener
 
+if TYPE_CHECKING:
+    pass
+
 _break_event_strategy = {}
 
 
 class BreakEvenStrategyTypedDict(TypedDict):
     strategy: Literal["order_block_price_base", "loss_price_base"]
+    timeframe: NotRequired[str | None]
     kwargs: dict[str, Any] | None
 
 
@@ -21,12 +26,15 @@ class BreakEvenListenerFactory(object):
         strategy = options.get('strategy', None)
         listener_class = _break_event_strategy.get(strategy)
         assert listener_class
+        self.timeframe = options.get("timeframe") or "1m"
         self.listener_class = listener_class
         self.init_kwargs = options.get('kwargs') or {}
-        self.init_kwargs.setdefault('timeframe', '1m')
+
+    def _valida_timeframe(self, exchange: Exchange):
+        assert self.timeframe in exchange.options["timeframes"]
 
     def create_listener(self, *args, **kwargs):
-        return self.listener_class(*args, **kwargs, **self.init_kwargs)
+        return self.listener_class(*args, **kwargs, timeframe=self.timeframe, **self.init_kwargs)
 
 
 class TpslPositionListener(KLinePositionListener):

@@ -58,6 +58,7 @@ class Runner(object):
     ):
         if timeframe == '1s':
             raise ValueError("not support 1s timeframe")
+        self.exchange = exchange
         self.timeframe = timeframe
         self.position_strategy: PositionStrategy = create_position_strategy(
             position_strategy.get('strategy'),
@@ -65,11 +66,11 @@ class Runner(object):
         )
         if break_even_strategy:
             self.break_even_listener_factory = BreakEvenListenerFactory(break_even_strategy)
+            self.break_even_listener_factory._valida_timeframe(exchange)  # noqa
         else:
             self.break_even_listener_factory = None
         self.symbol = symbol
         self.product_type = product_type
-        self.exchange = exchange
         self.min_fvg_percent = min_fvg_percent
         self.max_order_block_kline_undulate_percent = max_order_block_kline_undulate_percent
         self.min_order_block_kline_undulate_percent = min_order_block_kline_undulate_percent

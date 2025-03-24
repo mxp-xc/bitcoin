@@ -38,7 +38,7 @@ class PositionWrapper(BaseModel):
 class KLinePositionListener(PositionListener):
     def __init__(self, *args, timeframe: str | None = None, **kwargs):
         super().__init__(*args, **kwargs)
-        self.timeframe = timeframe or self.runner.timeframe
+        self.timeframe = timeframe
         self._stopping = False
 
     async def on_open(self):
@@ -56,7 +56,7 @@ class KLinePositionListener(PositionListener):
         while not self._stopping:
             ohlcv_list = await self.runner.exchange.watch_ohlcv(
                 self.runner.symbol,
-                self.timeframe
+                self.timeframe or self.runner.timeframe
             )
             klines = [KLine.from_ccxt(ohlcv) for ohlcv in ohlcv_list]
             await self._on_kline(klines)
