@@ -2,21 +2,33 @@
 import datetime
 import sys
 from functools import cached_property
+from pathlib import Path
 
 import ccxt as sync_ccxt
 from ccxt import pro as async_ccxt
 from loguru import logger
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 from .schema import ExchangeApiInfo
 
+if sys.platform == 'win32':
+    import asyncio
+
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 
 class _Settings(BaseModel):
+    project_path: Path = Path(__file__).parent.parent.resolve()
+
     debug: bool = True
 
     proxy_http_host: str | None = None
 
     proxy_http_port: int | None = None
+
+    model_config = ConfigDict(
+        arbitrary_types_allowed=True
+    )
 
     def get_proxy_http_base_url(self, schema: str = "http") -> str | None:
         if not self.proxy_http_port and not self.proxy_http_host:
@@ -75,12 +87,12 @@ class _Settings(BaseModel):
         exchange = getattr(module, api_info.exchange)(kws)
         return exchange
 
-    @staticmethod
-    def _config_logger():
+    def _config_logger(self):  # noqa
+        script_file_name = Path(sys.modules["__main__"].__file__).stem
         start_time = datetime.datetime.now().strftime("%Y-%m-%d %H_%M_%S")
-        log_file_name = f"logs/{start_time}.log"
+        log_file_path = str(self.project_path.joinpath(f"logs/{script_file_name}_{start_time}.log"))
         logger.add(
-            sink=log_file_name,
+            sink=log_file_path,
             format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
             level="DEBUG",
             rotation="30 MB",  # 当文件大小达到 10MB 时，自动创建新的日志文件
