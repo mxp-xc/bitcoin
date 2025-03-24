@@ -23,6 +23,7 @@ class BreakEvenListenerFactory(object):
         assert listener_class
         self.listener_class = listener_class
         self.init_kwargs = options.get('kwargs') or {}
+        self.init_kwargs.setdefault('timeframe', '1m')
 
     def create_listener(self, *args, **kwargs):
         return self.listener_class(*args, **kwargs, **self.init_kwargs)
