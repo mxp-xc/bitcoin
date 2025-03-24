@@ -43,6 +43,12 @@ async def main():
                         'base_usdt': 2
                     }
                 },
+                break_even_strategy={
+                    'strategy': 'loss_price_base',
+                    'kwargs': {
+                        'percent': 0.9
+                    }
+                },
                 runner_class=BTCRunner,
                 min_fvg_percent=0.1,
                 min_order_block_kline_undulate_percent=0.2,  # 最小振幅
@@ -59,6 +65,12 @@ async def main():
                     'kwargs': {
                         'base_total_usdt': 100,
                         'base_usdt': 2
+                    }
+                },
+                break_even_strategy={
+                    'strategy': 'loss_price_base',
+                    'kwargs': {
+                        'percent': 0.9
                     }
                 },
                 runner_class=ETH5MRunner,
