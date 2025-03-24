@@ -59,7 +59,6 @@ class BTCRunner2(EntryRunner):
         context: PlaceOrderContext,
         order_info: OrderInfo
     ) -> OrderInfo:
-        order_info = await super()._post_process_order_info(order_block, context, order_info)
         # 止损多带0.1个点
         loss_price = order_info.price * 0.001
 
@@ -84,4 +83,5 @@ class BTCRunner2(EntryRunner):
                 # 周末0.5个点
                 order_info.preset_stop_surplus_price = order_info.price - 0.005 * order_info.price
 
+        order_info = await super()._post_process_order_info(order_block, context, order_info)
         return order_info

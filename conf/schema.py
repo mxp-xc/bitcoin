@@ -6,4 +6,4 @@ class ExchangeApiInfo(BaseModel):
     exchange: str
     api_key: str
     secret: str
-    password: str
+    password: str | None = None
