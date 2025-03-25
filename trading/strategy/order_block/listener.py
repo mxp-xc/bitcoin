@@ -60,6 +60,7 @@ class KLinePositionListener(PositionListener):
             )
             klines = [KLine.from_ccxt(ohlcv) for ohlcv in ohlcv_list]
             await self._on_kline(klines)
+        logger.info(f"{self} stop _listen_klines")
 
     async def _on_kline(self, klines: list[KLine]):
         self._stopping = True

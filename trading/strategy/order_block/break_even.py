@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 import asyncio
+import random
 from typing import Any, TypedDict, Literal, TYPE_CHECKING, NotRequired
 
 from ccxt.base.exchange import Exchange
@@ -41,6 +42,48 @@ class TpslPositionListener(KLinePositionListener):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         assert self.order_wrapper.order_info.price
+
+    async def on_open(self):
+        await super().on_open()
+        asyncio.create_task(self._check_position_exist())
+
+    async def _check_position_exist(self):
+        logger.info(f"start check position {self.order_wrapper}")
+        retry_count = 0
+        try:
+            while not self._stopping:
+                # 仓位检测失败超过三次
+                if retry_count > 3:
+                    logger.error(f"max retry for {self.order_wrapper}")
+                    break
+
+                try:
+                    is_exist = await self._position_exist()
+                except Exception as exc:
+                    logger.error(f"Failed to check position {self.order_wrapper}", exc)
+                    retry_count += 1
+                    continue
+                # 重置重试次数
+                retry_count = 0
+                if is_exist:
+                    # 1到2分钟检测一次仓位
+                    seconds = random.randint(60, 120)
+                    logger.info(f"check position exist {self.order_wrapper}. wait {seconds}s next")
+                    await asyncio.sleep(seconds)
+                else:
+                    # 仓位不存在, 停止监听
+                    logger.warning(f"position not exist {self.order_wrapper}")
+                    break
+        finally:
+            logger.info(f"stop check position exist {self.order_wrapper}")
+            self._stopping = True
+
+    async def _position_exist(self) -> bool:
+        positions = await self.runner.exchange.fetch_positions([self.runner.symbol])
+        for position in positions:
+            if position['side'] == self.order_wrapper.order_block.side:
+                return True
+        return False
 
     async def _on_kline(self, klines: list[KLine]):
         for kline in klines:
