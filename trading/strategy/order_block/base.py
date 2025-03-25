@@ -216,8 +216,10 @@ class Runner(object):
                 elif status == "canceled":
                     self._pending_order.pop(client_order_id, None)
                     logger.info(f"canceled {client_order_id}")
-                elif status == "filled":
-                    logger.info(f"filled {client_order_id}")
+                elif status in ("filled", "partially_filled"):
+                    # 全部成交或者部分成交只直接监听. 后续如果部分成交继续成交了, 会被监听器继续处理. 如果没有成交
+                    # 或者监听器关闭了, 也只是无保本. 不会出现乱改止损的情况
+                    logger.info(f"{status} {client_order_id}")
                     ow = self._pending_order.pop(client_order_id)
                     assert ow and pos_side
                     await self._process_open_position(pos_side, ow)
