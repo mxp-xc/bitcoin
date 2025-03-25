@@ -52,14 +52,13 @@ class TpslPositionListener(KLinePositionListener):
         retry_count = 0
         try:
             while not self._stopping:
-                # 仓位检测失败超过三次
-                if retry_count > 3:
-                    logger.error(f"max retry for {self.order_wrapper}")
-                    break
-
                 try:
                     is_exist = await self._position_exist()
                 except Exception as exc:
+                    # 仓位检测失败超过三次
+                    if retry_count > 3:
+                        logger.error(f"max retry for {self.order_wrapper}")
+                        raise
                     logger.error(f"Failed to check position {self.order_wrapper}", exc)
                     retry_count += 1
                     continue
@@ -74,6 +73,9 @@ class TpslPositionListener(KLinePositionListener):
                     # 仓位不存在, 停止监听
                     logger.warning(f"position not exist {self.order_wrapper}")
                     break
+        except Exception as exc:
+            logger.error("Failed to check position exist", exc)
+            raise
         finally:
             logger.info(f"stop check position exist {self.order_wrapper}")
             self._stopping = True
