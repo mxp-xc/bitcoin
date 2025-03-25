@@ -107,7 +107,7 @@ class TpslPositionListener(KLinePositionListener):
         for order in orders:
             info = order['info']
             if info['planType'] == "loss_plan":
-                logger.warning(f"修改成功: {order_info}")
+                logger.warning(f"开始修改订单保本: {order_info}")
                 side = "buy" if self.order_wrapper.order_block.side == 'long' else 'sell'
                 await self.runner.exchange.edit_order(
                     order['id'], self.runner.symbol, 'market', side, order['amount'],
@@ -115,6 +115,7 @@ class TpslPositionListener(KLinePositionListener):
                         "stopLossPrice": order_info.price
                     }
                 )
+                logger.warning(f"修改保本成功: {order_info}")
                 return
         logger.error(f"未找到保本订单: {order_info}")
 
