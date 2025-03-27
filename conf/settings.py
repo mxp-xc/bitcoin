@@ -63,16 +63,18 @@ class _Settings(BaseModel):
     ):
         api_info = api_info or self.api_info
         assert api_info.exchange in module.exchanges, f"不支持的交易商: {api_info.exchange}"
-
         kws = {
-            "apiKey": api_info.api_key,
-            "secret": api_info.secret,
-            "password": api_info.password,
             "options": {
                 "defaultType": "swap",
                 "maxRetriesOnFailure": 3
             }
         }
+        if api_info.api_key:
+            assert api_info.secret and api_info.password
+            kws["apiKey"] = api_info.api_key
+            kws["secret"] = api_info.secret
+            kws["password"] = api_info.password
+
         proxy = self.get_proxy_http_base_url()
         if proxy:
             kws["https_proxy"] = proxy
