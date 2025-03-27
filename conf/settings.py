@@ -55,6 +55,15 @@ class _Settings(BaseModel):
     ) -> async_ccxt.Exchange:
         return self._create_exchange(async_ccxt, api_info, **kwargs)
 
+    def create_async_exchange_public(
+        self,
+        exchange: str,
+        **kwargs
+    ) -> async_ccxt.Exchange:
+        return self._create_exchange(
+            async_ccxt, ExchangeApiInfo(exchange=exchange), **kwargs
+        )
+
     def _create_exchange(
         self,
         module,
