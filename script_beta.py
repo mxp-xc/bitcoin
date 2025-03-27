@@ -15,9 +15,7 @@ BTCRunner, BTCRunner2, ETH5MRunner  # noqa
 
 
 class TestRunner(BTCRunner2):
-    async def _get_klines(
-        self, since: int | None = None, until: int | None = None, timeframe: str = None
-    ) -> list[KLine]:
+    async def _get_klines(self, since: int | None = None, until: int | None = None) -> list[KLine]:
         fmt = '%Y-%m-%d %H:%M'
         start = datetime.datetime.strptime('2025-03-16 18:30', fmt)
         end = datetime.datetime.strptime('2025-03-17 16:00', fmt)
@@ -42,49 +40,18 @@ async def main():
                 position_strategy={
                     'strategy': 'elasticity',
                     'kwargs': {
-                        'base_total_usdt': 2000,
-                        'base_usdt': 50
+                        'base_total_usdt': 1000,
+                        'base_usdt': 25
                     }
                 },
                 runner_class=BTCRunner,
                 min_fvg_percent=0.1,
-                break_even_strategy={
-                    'strategy': 'loss_price_base',
-                    'kwargs': {
-                        'percent': 0.9
-                    }
-                },
                 min_order_block_kline_undulate_percent=0.2,  # 最小振幅
                 max_order_block_kline_undulate_percent=1.5,  # 最大振幅
                 init_kwargs={
                     "middle_entry_undulate": 0.7,  # 中位入场的最低振幅
                 }
-            ),
-            CustomRunnerOptions(
-                symbol="SETH/SUSDT:SUSDT",
-                timeframe="5m",
-                position_strategy={
-                    'strategy': 'elasticity',
-                    'kwargs': {
-                        'base_total_usdt': 2000,
-                        'base_usdt': 50
-                    }
-                },
-                break_even_strategy={
-                    'strategy': 'loss_price_base',
-                    'kwargs': {
-                        'percent': 0.9
-                    }
-                },
-                runner_class=ETH5MRunner,
-                min_order_block_kline_undulate_percent=0.2,  # 入场需要满足的最小订单块方向的振幅
-                init_kwargs={
-                    "effective_start_time": datetime.timedelta(minutes=50),
-                    "effective_end_time": datetime.timedelta(hours=2, minutes=40),
-                    "volume_percent_threshold": 1.9,  # 成交量比例
-                    "profit_and_loss_ratio": 1.47,  # 盈亏比
-                }
-            ),
+            )
         ]
         rm = RunnerManager(options, exchange, "SUSDT-FUTURES")
         try:

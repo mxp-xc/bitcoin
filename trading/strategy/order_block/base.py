@@ -132,8 +132,8 @@ class Runner(object):
         await self._run_once_with_lock()
 
     async def _sleep_interval(self):
-        # 等待60s再调用接口获取k线
-        time_to_wait = 60
+        # 等待2分钟再调用接口获取k线
+        time_to_wait = 60 * 2
         logger.info(f"sleep: {time_to_wait}s")
         await asyncio.sleep(time_to_wait)
 
