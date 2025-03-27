@@ -35,6 +35,7 @@ class RunnerManager(object):
             exchange=self.exchange,
             timeframe=option.timeframe,
             position_strategy=option.position_strategy,
+            first_min_fvg_percent=option.first_min_fvg_percent,
             min_fvg_percent=option.min_fvg_percent,
             break_even_strategy=option.break_even_strategy,
             min_order_block_kline_undulate_percent=option.min_order_block_kline_undulate_percent,

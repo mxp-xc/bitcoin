@@ -35,6 +35,7 @@ class RunnerOption(BaseModel):
     position_strategy: PositionStrategyTypedDict
     break_even_strategy: BreakEvenStrategyTypedDict | None = None
     init_kwargs: dict[str, Any] | None = None
+    first_min_fvg_percent: float = 0  # 第一个fvg最小需要满足的条件
     min_fvg_percent: float = 0  # 最小
     min_order_block_kline_undulate_percent: float = 0  # 最小订单块振幅
     max_order_block_kline_undulate_percent: float = float('inf')
@@ -50,9 +51,10 @@ class Runner(object):
         exchange: Exchange,
         position_strategy: PositionStrategyTypedDict,
         timeframe: str,
-        min_fvg_percent: float,
         min_order_block_kline_undulate_percent: float,
         max_order_block_kline_undulate_percent: float,
+        first_min_fvg_percent: float = float('-inf'),
+        min_fvg_percent: float = float('-inf'),
         break_even_strategy: BreakEvenStrategyTypedDict | None = None,
         **kwargs
     ):
@@ -72,6 +74,7 @@ class Runner(object):
         self.symbol = symbol
         self.product_type = product_type
         self.min_fvg_percent = min_fvg_percent
+        self.first_min_fvg_percent = first_min_fvg_percent
         self.max_order_block_kline_undulate_percent = max_order_block_kline_undulate_percent
         self.min_order_block_kline_undulate_percent = min_order_block_kline_undulate_percent
         self._stopping = False
@@ -430,7 +433,9 @@ class Runner(object):
             fvg_list = order_block.get_fvg_percent()
             if not fvg_list:
                 raise StopTradingException(f"fvg not found. {order_block}")
-            if max(fvg_list) < self.min_fvg_percent:
+            if fvg_list[0] < self.first_min_fvg_percent:
+                message.append(f"[fvg: reject] first fvg: {fvg_list[0]} < {self.first_min_fvg_percent}. {fvg_list}")
+            elif max(fvg_list) < self.min_fvg_percent:
                 message.append(f"[fvg: reject] max fvg: {max(fvg_list)} < {self.min_fvg_percent}. {fvg_list}")
 
             undulate = order_block_kline.get_undulate_percent(
