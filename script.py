@@ -38,8 +38,8 @@ async def main():
                 position_strategy={
                     'strategy': 'elasticity',
                     'kwargs': {
-                        'base_total_usdt': 50,
-                        'base_usdt': 1
+                        'base_total_usdt': 100,
+                        'base_usdt': 1.5
                     }
                 },
                 break_even_strategy={
