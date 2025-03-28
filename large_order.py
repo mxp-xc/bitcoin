@@ -42,15 +42,18 @@ class OrderBookModel(BaseModel):
     bids: dict[float, ExchangeOrderWrapper] = defaultdict(ExchangeOrderWrapper)
 
 
-support_exchanges = (
+swap_support_exchanges = (
     "Binance", "OKX", "Bybit", "Bitmex"
+)
+spot_support_exchanges = (
+    "Binance", "OKX"
 )
 
 
 class LargeOrderWatcher(object):
     def __init__(self, symbol: str, tick: int, threshold: int, type_: int = 1):
         self.obm = OrderBookModel()
-        self.exchanges = support_exchanges
+        self.exchanges = swap_support_exchanges if type_ == 1 else spot_support_exchanges
         self.symbol = symbol
         self.tick = tick
         self.threshold = threshold
@@ -168,8 +171,9 @@ class LargeOrderWatcher(object):
 async def main():
     watcher = LargeOrderWatcher(
         symbol="BTC:USDT",  # 使用:分割, 目前coinglass只支持BTC:USDT和ETH:USDT
-        tick=100,  # 统计的挂单个数的价格范围. 10为即每次统计10刀范围内的挂单. 目前coinglass只支持10, 50, 100三个数字
-        threshold=500,  # 超过500个币种挂单就输出日志
+        tick=10,  # 统计的挂单个数的价格范围. 10为即每次统计10刀范围内的挂单. 目前coinglass只支持10, 50, 100三个数字
+        threshold=300,  # 超过500个币种挂单就输出日志
+        type_=1  # 1是合约, 0是现货
     )
     await watcher.watch()
 
