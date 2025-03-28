@@ -84,10 +84,10 @@ class LargeOrderWatcher(object):
                 old_volume = prev_bids.get(price, 0)
                 # 新的挂单小于阈值, 并且旧的挂单大于阈值
                 if new_volume < self.threshold < old_volume:
-                    big_volumes_sub.append(f"{price} 大额买单变动(减少) {old_volume} -> {new_volume}")
+                    big_volumes_sub.append(f"{price} 大额多单变动(减少) {old_volume} -> {new_volume}")
                 # 新的挂单大于阈值, 旧的挂单小于阈值
                 elif old_volume < self.threshold < new_volume:
-                    big_volumes_add.append(f"{price} 大额买单变动(新增) {old_volume} -> {new_volume}")
+                    big_volumes_add.append(f"{price} 大额多单变动(新增) {old_volume} -> {new_volume}")
 
             if big_volumes_sub or big_volumes_add:
                 now = datetime.datetime.now()
@@ -103,7 +103,7 @@ class LargeOrderWatcher(object):
                     big_volumes_sub.append(f"{price} 大额空单变动(减少) {old_volume} -> {new_volume}")
                 # 新的挂单大于阈值, 旧的挂单小于阈值
                 elif old_volume < self.threshold < new_volume:
-                    big_volumes_add.append(f"{price} 大额多单变动(新增) {old_volume} -> {new_volume}")
+                    big_volumes_add.append(f"{price} 大额空单变动(新增) {old_volume} -> {new_volume}")
 
             if big_volumes_sub or big_volumes_add:
                 now = datetime.datetime.now()
