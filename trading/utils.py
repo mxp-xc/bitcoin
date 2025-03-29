@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 import datetime
 
+import aiohttp
+
 
 def format_datetime(dt: datetime.datetime):
     return dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -28,3 +30,28 @@ def is_workday(dt: datetime.datetime | None = None):
     # 周六8点
     right = (dt + datetime.timedelta(days=5 - weekday)).replace(hour=8, minute=0, second=0, microsecond=0)
     return left <= dt < right
+
+
+async def send_wx_message(content, msg_type: str = "markdown", key: str | None = None):
+    if key is None:
+        from conf import settings
+        key = settings.wx_bot_key
+        if not key:
+            raise RuntimeError("send wx message required config wx_bot_key")
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            "https://qyapi.weixin.qq.com/cgi-bin/webhook/send",
+            params={
+                "key": key,
+            },
+            json={
+                "msgtype": msg_type,
+                msg_type: {
+                    "content": content,
+                    "mentioned_list": [],
+                }
+            },
+            ssl=False
+        ) as response:
+            response.raise_for_status()
+            assert (await response.json())["errcode"] == 0

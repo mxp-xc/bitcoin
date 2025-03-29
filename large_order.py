@@ -12,6 +12,7 @@ import orjson
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
+from conf import settings
 from trading import utils
 
 
@@ -59,6 +60,7 @@ class LargeOrderWatcher(object):
         self.threshold = threshold
         self.type_ = type_
         self._lock = asyncio.Lock()
+        self._stopping = False
 
     @cached_property
     def session(self):
@@ -69,17 +71,19 @@ class LargeOrderWatcher(object):
         await asyncio.sleep(5)
 
         logger.info("initialize")
+        messages = []
         prev_bids, prev_asks = await self.calc()
         for price, volume in sorted(prev_asks.items(), key=lambda i: i[0]):
             if volume >= self.threshold:
-                logger.info(f"{price} 存在大额空单 {volume}")
+                messages.append(f'{price} 存在大额<font color="warning">空单</font> {volume}')
         for price, volume in sorted(prev_bids.items(), key=lambda i: i[0], reverse=True):
             if volume >= self.threshold:
-                logger.info(f"{price} 存在大额多单 {volume}")
+                messages.append(f'{price} 存在大额<font color="info">多单</font> {volume}')
+        await self._log_and_send_wx_message(",\n".join(messages))
         await asyncio.sleep(1)
         logger.info("start aware change")
 
-        while True:
+        while not self._stopping:
             new_bids, new_asks = await self.calc()
             # 比较新的变化
             big_volumes_add, big_volumes_sub = [], []
@@ -87,32 +91,31 @@ class LargeOrderWatcher(object):
                 old_volume = prev_bids.get(price, 0)
                 # 新的挂单小于阈值, 并且旧的挂单大于阈值
                 if new_volume < self.threshold < old_volume:
-                    big_volumes_sub.append(f"{price} 大额多单变动(减少) {old_volume} -> {new_volume}")
+                    big_volumes_sub.append(
+                        f'{price} 大额<font color="info">多单</font>变动(减少) {old_volume} -> {new_volume}')
                 # 新的挂单大于阈值, 旧的挂单小于阈值
                 elif old_volume < self.threshold < new_volume:
-                    big_volumes_add.append(f"{price} 大额多单变动(新增) {old_volume} -> {new_volume}")
-
-            if big_volumes_sub or big_volumes_add:
-                now = datetime.datetime.now()
-                logger.info(f"============  {utils.format_datetime(now)}  =============")
-                for message in itertools.chain(big_volumes_add, big_volumes_sub):
-                    logger.info(message)
+                    big_volumes_add.append(
+                        f'{price} 大额<font color="info">多单</font>变动(新增) {old_volume} -> {new_volume}')
 
             big_volumes_add, big_volumes_sub = [], []
             for price, new_volume in sorted(new_asks.items(), key=lambda i: i[0]):
                 old_volume = prev_asks.get(price, 0)
                 # 新的挂单小于阈值, 并且旧的挂单大于阈值
                 if new_volume < self.threshold < old_volume:
-                    big_volumes_sub.append(f"{price} 大额空单变动(减少) {old_volume} -> {new_volume}")
+                    big_volumes_sub.append(
+                        f'{price} 大额<font color="warning">空单</font>变动(减少) {old_volume} -> {new_volume}')
                 # 新的挂单大于阈值, 旧的挂单小于阈值
                 elif old_volume < self.threshold < new_volume:
-                    big_volumes_add.append(f"{price} 大额空单变动(新增) {old_volume} -> {new_volume}")
+                    big_volumes_add.append(
+                        f'{price} 大额<font color="warning">空单</font>变动(新增) {old_volume} -> {new_volume}')
 
             if big_volumes_sub or big_volumes_add:
                 now = datetime.datetime.now()
-                logger.info(f"============  {utils.format_datetime(now)}  =============")
-                for message in itertools.chain(big_volumes_add, big_volumes_sub):
-                    logger.info(message)
+                await self._log_and_send_wx_message(f"""
+{utils.format_datetime(now)}
+{"\n".join(itertools.chain(big_volumes_add, big_volumes_sub))}
+                """)
 
             prev_bids, prev_asks = new_bids, new_asks
             await asyncio.sleep(1)
@@ -129,28 +132,40 @@ class LargeOrderWatcher(object):
         return q
 
     async def watch(self):
-        async with self.session.ws_connect(
-            url="wss://wss.coinglass.com/v2/ws",
-            verify_ssl=False
-        ) as ws:
-            logger.info("subscribe")
-            await self.subscribe(ws)
-            asyncio.create_task(self.alert())
+        tp = "合约" if self.type_ == 1 else "现货"
+        await self._log_and_send_wx_message(
+            f"开始监听{self.symbol}({tp})大额订单, 交易商{self.exchanges}, {self.tick = }, 阈值: {self.threshold}"
+        )
+        try:
+            async with self.session.ws_connect(
+                url="wss://wss.coinglass.com/v2/ws",
+                verify_ssl=False
+            ) as ws:
+                logger.info("subscribe")
+                await self.subscribe(ws)
+                asyncio.create_task(self.alert())
 
-            logger.info(f"watch order book. exchanges: {self.exchanges}")
-            async for message in ws:
-                raw_data = gzip.decompress(message.data)
-                item = orjson.loads(raw_data)
-                order_book = OrderBook(**item)
-                exchange = order_book.params["key"].split(":", 1)[0]
-                async with self._lock:
-                    for d, w in (
-                        (order_book.data.bids, self.obm.bids),
-                        (order_book.data.asks, self.obm.asks),
-                    ):
-                        for price, volume in d:
-                            wrapper = w[price]
-                            wrapper.exchange_volume_map[exchange] = volume
+                logger.info(f"watch order book. exchanges: {self.exchanges}")
+                async for message in ws:
+                    if self._stopping:
+                        return
+                    raw_data = gzip.decompress(message.data)
+                    item = orjson.loads(raw_data)
+                    order_book = OrderBook(**item)
+                    exchange = order_book.params["key"].split(":", 1)[0]
+                    async with self._lock:
+                        for d, w in (
+                            (order_book.data.bids, self.obm.bids),
+                            (order_book.data.asks, self.obm.asks),
+                        ):
+                            for price, volume in d:
+                                wrapper = w[price]
+                                wrapper.exchange_volume_map[exchange] = volume
+        except Exception as exc:
+            await self._log_and_send_wx_message(f"Failed to watch large order: {exc!s}", level="exceptio")
+        finally:
+            self._stopping = True
+            await self._log_and_send_wx_message("large order watcher bot stop")
 
     async def subscribe(self, ws: aiohttp.ClientWebSocketResponse):
         for exchange in self.exchanges:
@@ -167,8 +182,13 @@ class LargeOrderWatcher(object):
                 }
             )
 
+    async def _log_and_send_wx_message(self, message, level='info'):  # noqa
+        getattr(logger, level)(message)
+        await utils.send_wx_message(message)
+
 
 async def main():
+    assert settings.wx_bot_key
     watcher = LargeOrderWatcher(
         symbol="BTC:USDT",  # 使用:分割, 目前coinglass只支持BTC:USDT和ETH:USDT
         tick=10,  # 统计的挂单个数的价格范围. 10为即每次统计10刀范围内的挂单. 目前coinglass只支持10, 50, 100三个数字

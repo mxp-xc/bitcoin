@@ -22,6 +22,8 @@ class _Settings(BaseModel):
 
     debug: bool = True
 
+    wx_bot_key: str | None = None
+
     proxy_http_host: str | None = None
 
     proxy_http_port: int | None = None
