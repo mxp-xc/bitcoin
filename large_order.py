@@ -162,7 +162,7 @@ class LargeOrderWatcher(object):
                                 wrapper = w[price]
                                 wrapper.exchange_volume_map[exchange] = volume
         except Exception as exc:
-            await self._log_and_send_wx_message(f"Failed to watch large order: {exc!s}", level="exceptio")
+            await self._log_and_send_wx_message(f"Failed to watch large order: {exc!s}", level="exception")
         finally:
             self._stopping = True
             await self._log_and_send_wx_message("large order watcher bot stop")
