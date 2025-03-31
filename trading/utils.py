@@ -2,6 +2,7 @@
 import datetime
 
 import aiohttp
+from loguru import logger
 
 
 def format_datetime(dt: datetime.datetime):
@@ -56,4 +57,6 @@ async def send_wx_message(content, msg_type: str = "markdown", key: str | None =
             ssl=False
         ) as response:
             response.raise_for_status()
-            assert (await response.json())["errcode"] == 0
+            result_json: dict = await response.json()
+            if result_json.get("errcode") != 0:
+                logger.error(f"Failed to send wx message. result: {result_json}")

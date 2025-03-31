@@ -52,12 +52,19 @@ spot_support_exchanges = (
 
 
 class LargeOrderWatcher(object):
-    def __init__(self, symbol: str, tick: int, threshold: int, type_: int = 1):
+    def __init__(
+        self,
+        symbol: str,
+        tick: int,
+        thresholds: list[float],
+        type_: int = 1
+    ):
         self.obm = OrderBookModel()
         self.exchanges = swap_support_exchanges if type_ == 1 else spot_support_exchanges
         self.symbol = symbol
         self.tick = tick
-        self.threshold = threshold
+        self.thresholds = thresholds
+        self.threshold = thresholds[0]
         self.type_ = type_
         self._lock = asyncio.Lock()
         self._stopping = False
@@ -79,7 +86,8 @@ class LargeOrderWatcher(object):
         for price, volume in sorted(prev_bids.items(), key=lambda i: i[0], reverse=True):
             if volume >= self.threshold:
                 messages.append(f'{price} 存在大额<font color="info">多单</font> {volume}')
-        await self._log_and_send_wx_message(",\n".join(messages))
+        if messages:
+            await self._log_and_send_wx_message(",\n".join(messages))
         await asyncio.sleep(1)
         logger.info("start aware change")
 
@@ -137,35 +145,45 @@ class LargeOrderWatcher(object):
             f"开始监听{self.symbol}({tp})大额订单, 交易商{self.exchanges}, {self.tick = }, 阈值: {self.threshold}"
         )
         try:
-            async with self.session.ws_connect(
-                url="wss://wss.coinglass.com/v2/ws",
-                verify_ssl=False
-            ) as ws:
-                logger.info("subscribe")
-                await self.subscribe(ws)
-                asyncio.create_task(self.alert())
-
-                logger.info(f"watch order book. exchanges: {self.exchanges}")
-                async for message in ws:
-                    if self._stopping:
-                        return
-                    raw_data = gzip.decompress(message.data)
-                    item = orjson.loads(raw_data)
-                    order_book = OrderBook(**item)
-                    exchange = order_book.params["key"].split(":", 1)[0]
-                    async with self._lock:
-                        for d, w in (
-                            (order_book.data.bids, self.obm.bids),
-                            (order_book.data.asks, self.obm.asks),
-                        ):
-                            for price, volume in d:
-                                wrapper = w[price]
-                                wrapper.exchange_volume_map[exchange] = volume
+            while True:
+                async with aiohttp.ClientSession() as session:
+                    async with session.ws_connect(
+                        url="wss://wss.coinglass.com/v2/ws",
+                        verify_ssl=False
+                    ) as ws:
+                        await self._watch(ws)
+                logger.info("restart client session")
         except Exception as exc:
             await self._log_and_send_wx_message(f"Failed to watch large order: {exc!s}", level="exception")
         finally:
             self._stopping = True
             await self._log_and_send_wx_message("large order watcher bot stop")
+
+    async def _watch(self, ws: aiohttp.ClientWebSocketResponse):
+        logger.info("subscribe")
+        await self.subscribe(ws)
+        asyncio.create_task(self.alert())
+
+        logger.info(f"watch order book. exchanges: {self.exchanges}")
+        while not self._stopping:
+            async for message in ws:
+                if self._stopping:
+                    return
+                raw_data = gzip.decompress(message.data)
+                item = orjson.loads(raw_data)
+                order_book = OrderBook(**item)
+                exchange = order_book.params["key"].split(":", 1)[0]
+                async with self._lock:
+                    for d, w in (
+                        (order_book.data.bids, self.obm.bids),
+                        (order_book.data.asks, self.obm.asks),
+                    ):
+                        for price, volume in d:
+                            wrapper = w[price]
+                            wrapper.exchange_volume_map[exchange] = volume
+            logger.info("ping")
+            await ws.ping(b"ping")
+            await asyncio.sleep(1)
 
     async def subscribe(self, ws: aiohttp.ClientWebSocketResponse):
         for exchange in self.exchanges:
@@ -192,7 +210,7 @@ async def main():
     watcher = LargeOrderWatcher(
         symbol="BTC:USDT",  # 使用:分割, 目前coinglass只支持BTC:USDT和ETH:USDT
         tick=10,  # 统计的挂单个数的价格范围. 10为即每次统计10刀范围内的挂单. 目前coinglass只支持10, 50, 100三个数字
-        threshold=300,  # 超过500个币种挂单就输出日志
+        thresholds=[300],  # 超过500个币种挂单就输出日志
         type_=1  # 1是合约, 0是现货
     )
     await watcher.watch()
