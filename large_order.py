@@ -154,15 +154,27 @@ class LargeOrderWatcher(object):
         await self._log_and_send_wx_message(
             f"开始监听{self.symbol}({tp})大额订单, 交易商{self.exchanges}, {self.tick = }, 阈值: {self.thresholds}"
         )
+        retry = 0
         try:
             while True:
-                async with aiohttp.ClientSession() as session:
-                    async with session.ws_connect(
-                        url="wss://wss.coinglass.com/v2/ws",
-                        verify_ssl=False
-                    ) as ws:
-                        await self._watch(ws)
-                logger.info("restart client session")
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.ws_connect(
+                            url="wss://wss.coinglass.com/v2/ws",
+                            verify_ssl=False
+                        ) as ws:
+                            await self._watch(ws)
+                    logger.info("restart client session")
+                except Exception as exc:
+                    if retry > 3:
+                        raise
+                    retry += 1
+                    message = f"Failed to watch coinglass. reason: {exc!s}. retry: {retry}. wait 1 min"
+                    logger.error(message)
+                    await utils.send_wx_message(message)
+                    await asyncio.sleep(60)
+                else:
+                    retry = 0
         except Exception as exc:
             await self._log_and_send_wx_message(f"Failed to watch large order: {exc!s}", level="exception")
         finally:
