@@ -187,6 +187,11 @@ class LargeOrderWatcher(object):
                 prev_datetime = now
             raw_data = gzip.decompress(message.data)
             item = orjson.loads(raw_data)
+            if not item.get("data"):
+                await self._log_and_send_wx_message("data not recv. wait 1 seconds")
+                await asyncio.sleep(1)
+                continue
+
             order_book = OrderBook(**item)
             exchange = order_book.params["key"].split(":", 1)[0]
             async with self._lock:
