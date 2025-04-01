@@ -175,25 +175,28 @@ class LargeOrderWatcher(object):
         asyncio.create_task(self.alert())
 
         logger.info(f"watch order book. exchanges: {self.exchanges}")
-        while not self._stopping:
-            async for message in ws:
-                if self._stopping:
-                    return
-                raw_data = gzip.decompress(message.data)
-                item = orjson.loads(raw_data)
-                order_book = OrderBook(**item)
-                exchange = order_book.params["key"].split(":", 1)[0]
-                async with self._lock:
-                    for d, w in (
-                        (order_book.data.bids, self.obm.bids),
-                        (order_book.data.asks, self.obm.asks),
-                    ):
-                        for price, volume in d:
-                            wrapper = w[price]
-                            wrapper.exchange_volume_map[exchange] = volume
-            logger.info("ping")
-            await ws.ping(b"ping")
-            await asyncio.sleep(1)
+        prev_datetime = datetime.datetime.now()
+        interval = datetime.timedelta(minutes=1)
+        async for message in ws:
+            if self._stopping:
+                return
+            now = datetime.datetime.now()
+            if now - prev_datetime >= interval:
+                # 一分钟记录一次在运行中
+                logger.info("listening")
+                prev_datetime = now
+            raw_data = gzip.decompress(message.data)
+            item = orjson.loads(raw_data)
+            order_book = OrderBook(**item)
+            exchange = order_book.params["key"].split(":", 1)[0]
+            async with self._lock:
+                for d, w in (
+                    (order_book.data.bids, self.obm.bids),
+                    (order_book.data.asks, self.obm.asks),
+                ):
+                    for price, volume in d:
+                        wrapper = w[price]
+                        wrapper.exchange_volume_map[exchange] = volume
 
     async def subscribe(self, ws: aiohttp.ClientWebSocketResponse):
         for exchange in self.exchanges:
