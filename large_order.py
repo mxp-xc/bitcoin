@@ -67,6 +67,7 @@ class LargeOrderWatcher(object):
         self.type_ = type_
         self._lock = asyncio.Lock()
         self._stopping = False
+        self._alert_task = None
 
     @cached_property
     def session(self):
@@ -158,13 +159,7 @@ class LargeOrderWatcher(object):
         try:
             while True:
                 try:
-                    async with aiohttp.ClientSession() as session:
-                        async with session.ws_connect(
-                            url="wss://wss.coinglass.com/v2/ws",
-                            verify_ssl=False
-                        ) as ws:
-                            await self._watch(ws)
-                    logger.info("restart client session")
+                    await self.restart()
                 except Exception as exc:
                     if retry > 3:
                         raise
@@ -181,10 +176,21 @@ class LargeOrderWatcher(object):
             self._stopping = True
             await self._log_and_send_wx_message("large order watcher bot stop")
 
+    async def restart(self):
+        if self._alert_task is None:
+            self._alert_task = asyncio.create_task(self.alert())
+
+        async with aiohttp.ClientSession() as session:
+            async with session.ws_connect(
+                url="wss://wss.coinglass.com/v2/ws",
+                verify_ssl=False
+            ) as ws:
+                await self._watch(ws)
+        logger.info("restart client session")
+
     async def _watch(self, ws: aiohttp.ClientWebSocketResponse):
         logger.info("subscribe")
         await self.subscribe(ws)
-        asyncio.create_task(self.alert())
 
         logger.info(f"watch order book. exchanges: {self.exchanges}")
         prev_datetime = datetime.datetime.now()
