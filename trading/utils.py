@@ -37,10 +37,7 @@ def is_workday(dt: datetime.datetime | None = None):
 
 async def send_wx_message(content, msg_type: str = "markdown", key: str | None = None):
     if key is None:
-        from conf import settings
-        key = settings.wx_bot_key
-        if not key:
-            raise RuntimeError("send wx message required config wx_bot_key")
+        raise RuntimeError("send wx message required config wx_bot_key")
     async with aiohttp.ClientSession() as session:
         async with session.post(
             "https://qyapi.weixin.qq.com/cgi-bin/webhook/send",

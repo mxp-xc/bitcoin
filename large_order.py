@@ -57,7 +57,8 @@ class LargeOrderWatcher(object):
         symbol: str,
         tick: int,
         thresholds: list[float],
-        type_: int = 1
+        type_: int = 1,
+        wx_key: str | None = None,
     ):
         self.obm = OrderBookModel()
         self.exchanges = swap_support_exchanges if type_ == 1 else spot_support_exchanges
@@ -65,6 +66,7 @@ class LargeOrderWatcher(object):
         self.tick = tick
         self.thresholds = sorted(thresholds)
         self.type_ = type_
+        self._wx_key = wx_key
         self._lock = asyncio.Lock()
         self._stopping = False
         self._alert_task = None
@@ -77,6 +79,12 @@ class LargeOrderWatcher(object):
     def lower_threshold(self) -> float:
         return self.thresholds[0]
 
+    @property
+    def type_desc(self) -> str:
+        if self.type_ == 0:
+            return "现货"
+        return "合约"
+
     def _find_threshold_index(self, value: float) -> int:
         for index, threshold in enumerate(self.thresholds, 0):
             if value < threshold:
@@ -84,22 +92,22 @@ class LargeOrderWatcher(object):
         return len(self.thresholds) - 1
 
     async def alert(self):
-        logger.info("start alert")
+        logger.info(f"{self.type_desc} start alert")
         await asyncio.sleep(5)
 
-        logger.info("initialize")
+        logger.info(f"{self.type_desc} initialize")
         messages = []
         prev_bids, prev_asks = await self.calc()
-        for price, volume in sorted(prev_asks.items(), key=lambda i: i[0]):
+        for price, volume in sorted(prev_asks.items(), key=lambda i: i[0], reverse=True):
             if volume >= self.lower_threshold:
                 messages.append(f'{price} 存在大额<font color="warning">空单</font> {volume}')
         for price, volume in sorted(prev_bids.items(), key=lambda i: i[0], reverse=True):
             if volume >= self.lower_threshold:
                 messages.append(f'{price} 存在大额<font color="info">多单</font> {volume}')
         if messages:
-            await self._log_and_send_wx_message(",\n".join(messages))
+            await self._log_and_send_wx_message(f"""{self.type_desc}\n{"\n".join(messages)}""")
         await asyncio.sleep(1)
-        logger.info("start aware change")
+        logger.info(f"({self.type_desc}) start aware change")
 
         while not self._stopping:
             new_bids, new_asks = await self.calc()
@@ -132,7 +140,7 @@ class LargeOrderWatcher(object):
 
             if big_volumes_sub or big_volumes_add:
                 now = datetime.datetime.now()
-                await self._log_and_send_wx_message(f"""{utils.format_datetime(now)}
+                await self._log_and_send_wx_message(f"""{utils.format_datetime(now)} ({self.type_desc})
 {"\n".join(itertools.chain(big_volumes_add, big_volumes_sub))}
 """)
 
@@ -151,9 +159,8 @@ class LargeOrderWatcher(object):
         return q
 
     async def watch(self):
-        tp = "合约" if self.type_ == 1 else "现货"
         await self._log_and_send_wx_message(
-            f"开始监听{self.symbol}({tp})大额订单, 交易商{self.exchanges}, {self.tick = }, 阈值: {self.thresholds}"
+            f"开始监听{self.symbol}({self.type_desc})大额订单, 交易商{self.exchanges}, {self.tick = }, 阈值: {self.thresholds}"
         )
         retry = 0
         try:
@@ -164,17 +171,20 @@ class LargeOrderWatcher(object):
                     if retry > 3:
                         raise
                     retry += 1
-                    message = f"Failed to watch coinglass. reason: {exc!s}. retry: {retry}. wait 1 min"
+                    message = f"({self.type_desc}) Failed to watch coinglass. reason: {exc!s}. retry: {retry}. wait 1 min"
                     logger.error(message)
-                    await utils.send_wx_message(message)
+                    await self._send_wx_message(message)
                     await asyncio.sleep(60)
                 else:
                     retry = 0
         except Exception as exc:
-            await self._log_and_send_wx_message(f"Failed to watch large order: {exc!s}", level="exception")
+            await self._log_and_send_wx_message(
+                f"{self.type_desc} Failed to watch large order: {exc!s}",
+                level="exception"
+            )
         finally:
             self._stopping = True
-            await self._log_and_send_wx_message("large order watcher bot stop")
+            await self._log_and_send_wx_message(f"({self.type_desc}) large order watcher bot stop")
 
     async def restart(self):
         if self._alert_task is None:
@@ -186,13 +196,13 @@ class LargeOrderWatcher(object):
                 verify_ssl=False
             ) as ws:
                 await self._watch(ws)
-        logger.info("restart client session")
+        logger.info(f"({self.type_desc}) restart client session")
 
     async def _watch(self, ws: aiohttp.ClientWebSocketResponse):
-        logger.info("subscribe")
+        logger.info(f"{self.type_desc} subscribe")
         await self.subscribe(ws)
 
-        logger.info(f"watch order book. exchanges: {self.exchanges}")
+        logger.info(f"{self.type_desc} watch order book. exchanges: {self.exchanges}")
         prev_datetime = datetime.datetime.now()
         interval = datetime.timedelta(minutes=1)
         async for message in ws:
@@ -201,12 +211,12 @@ class LargeOrderWatcher(object):
             now = datetime.datetime.now()
             if now - prev_datetime >= interval:
                 # 一分钟记录一次在运行中
-                logger.info("listening")
+                logger.info(f"{self.type_desc} listening")
                 prev_datetime = now
             raw_data = gzip.decompress(message.data)
             item = orjson.loads(raw_data)
             if not item.get("data"):
-                await self._log_and_send_wx_message("data not recv. wait 1 seconds")
+                await self._log_and_send_wx_message(f"{self.type_desc} data not recv. wait 1 seconds")
                 await asyncio.sleep(1)
                 continue
 
@@ -238,18 +248,32 @@ class LargeOrderWatcher(object):
 
     async def _log_and_send_wx_message(self, message, level='info'):  # noqa
         getattr(logger, level)(message)
-        await utils.send_wx_message(message)
+        await self._send_wx_message(message)
+
+    async def _send_wx_message(self, message: str):
+        if self._wx_key:
+            await utils.send_wx_message(message, key=self._wx_key)
 
 
 async def main():
-    assert settings.wx_bot_key
-    watcher = LargeOrderWatcher(
-        symbol="BTC:USDT",  # 使用:分割, 目前coinglass只支持BTC:USDT和ETH:USDT
-        tick=10,  # 统计的挂单个数的价格范围. 10为即每次统计10刀范围内的挂单. 目前coinglass只支持10, 50, 100三个数字
-        thresholds=[300, 500, 700, 800, 900, 1000],  # 超过500个币种挂单就输出日志
-        type_=1  # 1是合约, 0是现货
+    swap_watcher = LargeOrderWatcher(
+        symbol="BTC:USDT",
+        tick=10,
+        thresholds=[300, 500, 700, 800, 900, 1000],
+        type_=1,
+        wx_key=settings.btc_swap_wx_bot_key
     )
-    await watcher.watch()
+    spot_watcher = LargeOrderWatcher(
+        symbol="BTC:USDT",
+        tick=10,
+        thresholds=list(range(50, 500, 50)),
+        type_=0,
+        wx_key=settings.btc_spot_wx_bot_key
+    )
+    await asyncio.gather(
+        spot_watcher.watch(),
+        swap_watcher.watch()
+    )
 
 
 if __name__ == '__main__':
