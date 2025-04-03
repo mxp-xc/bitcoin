@@ -263,15 +263,15 @@ async def main():
         type_=1,
         wx_key=settings.btc_swap_wx_bot_key
     )
-    spot_watcher = LargeOrderWatcher(
-        symbol="BTC:USDT",
-        tick=10,
-        thresholds=list(range(50, 500, 50)),
-        type_=0,
-        wx_key=settings.btc_spot_wx_bot_key
-    )
+    # spot_watcher = LargeOrderWatcher(
+    #     symbol="BTC:USDT",
+    #     tick=10,
+    #     thresholds=list(range(50, 500, 50)),
+    #     type_=0,
+    #     wx_key=settings.btc_spot_wx_bot_key
+    # )
     await asyncio.gather(
-        spot_watcher.watch(),
+        # spot_watcher.watch(),
         swap_watcher.watch()
     )
 
