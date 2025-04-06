@@ -111,7 +111,10 @@ class LargeOrderWatcher(object):
             if volume >= self.lower_threshold:
                 messages.append(f'{price} 存在大额<font color="info">多单</font> {volume}')
         if messages:
-            await self._log_and_send_wx_message(f"""{self.type_desc}全景图\n{"\n".join(messages)}""")
+            now = datetime.datetime.now()
+            await self._log_and_send_wx_message(
+                f"""{self.type_desc}全景图 {utils.format_datetime(now)}\n{"\n".join(messages)}"""
+            )
 
     async def _alert_panorama_interval(self):
         await asyncio.sleep(self.panorama_interval)
