@@ -58,6 +58,7 @@ class LargeOrderWatcher(object):
         tick: int,
         thresholds: list[float],
         type_: int = 1,
+        panorama_interval: float = 60 * 60,
         wx_key: str | None = None,
     ):
         self.obm = OrderBookModel()
@@ -66,10 +67,12 @@ class LargeOrderWatcher(object):
         self.tick = tick
         self.thresholds = sorted(thresholds)
         self.type_ = type_
+        self.panorama_interval = panorama_interval
         self._wx_key = wx_key
         self._lock = asyncio.Lock()
         self._stopping = False
         self._alert_task = None
+        self._alert_panorama_task = None
 
     @cached_property
     def session(self):
@@ -85,17 +88,20 @@ class LargeOrderWatcher(object):
             return "现货"
         return "合约"
 
+    def _panorama_interval_desc(self) -> str:
+        delta = datetime.timedelta(seconds=self.panorama_interval)
+        dt = datetime.datetime.min + delta
+        result = dt.strftime("%H小时%M分钟%S秒")
+        return result
+
     def _find_threshold_index(self, value: float) -> int:
         for index, threshold in enumerate(self.thresholds, 0):
             if value < threshold:
                 return index - 1
         return len(self.thresholds) - 1
 
-    async def alert(self):
-        logger.info(f"{self.type_desc} start alert")
-        await asyncio.sleep(5)
-
-        logger.info(f"{self.type_desc} initialize")
+    async def _alert_panorama(self):
+        logger.info("_alert_panorama")
         messages = []
         prev_bids, prev_asks = await self.calc()
         for price, volume in sorted(prev_asks.items(), key=lambda i: i[0], reverse=True):
@@ -105,8 +111,20 @@ class LargeOrderWatcher(object):
             if volume >= self.lower_threshold:
                 messages.append(f'{price} 存在大额<font color="info">多单</font> {volume}')
         if messages:
-            await self._log_and_send_wx_message(f"""{self.type_desc}\n{"\n".join(messages)}""")
-        await asyncio.sleep(1)
+            await self._log_and_send_wx_message(f"""{self.type_desc}全景图\n{"\n".join(messages)}""")
+
+    async def _alert_panorama_interval(self):
+        await asyncio.sleep(self.panorama_interval)
+        while not self._stopping:
+            await self._alert_panorama()
+            await asyncio.sleep(self.panorama_interval)
+
+    async def alert(self):
+        logger.info(f"{self.type_desc} start alert")
+        await asyncio.sleep(5)
+        await self._alert_panorama()
+        if self._alert_panorama_task is None:
+            self._alert_panorama_task = asyncio.create_task(self._alert_panorama_interval())
         logger.info(f"({self.type_desc}) start aware change")
 
         while not self._stopping:
@@ -160,7 +178,11 @@ class LargeOrderWatcher(object):
 
     async def watch(self):
         await self._log_and_send_wx_message(
-            f"开始监听{self.symbol}({self.type_desc})大额订单, 交易商{self.exchanges}, {self.tick = }, 阈值: {self.thresholds}"
+            f"开始监听{self.symbol}({self.type_desc})大额订单,"
+            f"交易商{self.exchanges},"
+            f"{self.tick = },"
+            f"阈值: {self.thresholds},"
+            f"全景图告警间隔: {self._panorama_interval_desc()}"
         )
         retry = 0
         try:
