@@ -128,7 +128,6 @@ class LargeOrderWatcher(object):
         await self._alert_panorama()
         if self._alert_panorama_task is None:
             self._alert_panorama_task = asyncio.create_task(self._alert_panorama_interval())
-            await asyncio.sleep(.1)
         logger.info(f"({self.type_desc}) start aware change")
 
         prev_bids, prev_asks = await self.calc()
@@ -161,9 +160,7 @@ class LargeOrderWatcher(object):
                     big_volumes_sub.append(
                         f'{price} 大额<font color="warning">空单</font>变动(减少) {old_volume} -> {new_volume}')
 
-            logger.info("loop 1")
             if big_volumes_sub or big_volumes_add:
-                logger.info("=" * 100)
                 now = datetime.datetime.now()
                 await self._log_and_send_wx_message(f"""{utils.format_datetime(now)} ({self.type_desc})
 {"\n".join(itertools.chain(big_volumes_add, big_volumes_sub))}
