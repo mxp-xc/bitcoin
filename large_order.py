@@ -128,8 +128,10 @@ class LargeOrderWatcher(object):
         await self._alert_panorama()
         if self._alert_panorama_task is None:
             self._alert_panorama_task = asyncio.create_task(self._alert_panorama_interval())
+            await asyncio.sleep(.1)
         logger.info(f"({self.type_desc}) start aware change")
 
+        prev_bids, prev_asks = await self.calc()
         while not self._stopping:
             new_bids, new_asks = await self.calc()
             # 比较新的变化
@@ -159,7 +161,9 @@ class LargeOrderWatcher(object):
                     big_volumes_sub.append(
                         f'{price} 大额<font color="warning">空单</font>变动(减少) {old_volume} -> {new_volume}')
 
+            logger.info("loop 1")
             if big_volumes_sub or big_volumes_add:
+                logger.info("=" * 100)
                 now = datetime.datetime.now()
                 await self._log_and_send_wx_message(f"""{utils.format_datetime(now)} ({self.type_desc})
 {"\n".join(itertools.chain(big_volumes_add, big_volumes_sub))}
@@ -213,7 +217,16 @@ class LargeOrderWatcher(object):
 
     async def restart(self):
         if self._alert_task is None:
-            self._alert_task = asyncio.create_task(self.alert())
+            async def _start_alert():
+                try:
+                    await self.alert()
+                except Exception:
+                    logger.exception("Failed to run alert")
+                    raise
+                finally:
+                    self._stopping = True
+
+            self._alert_task = asyncio.create_task(_start_alert())
 
         async with aiohttp.ClientSession() as session:
             async with session.ws_connect(
@@ -284,7 +297,7 @@ async def main():
     swap_watcher = LargeOrderWatcher(
         symbol="BTC:USDT",
         tick=10,
-        thresholds=[300, 500, 700, 800, 900, 1000],
+        thresholds=list(itertools.chain([300], range(500, 1300, 100))),
         type_=1,
         wx_key=settings.btc_swap_wx_bot_key
     )
