@@ -1,7 +1,0 @@
-fastapi
-uvicorn
-jinja2
-orjson
-ccxt
-pydantic
-loguru
