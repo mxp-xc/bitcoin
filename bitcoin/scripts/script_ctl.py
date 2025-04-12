@@ -146,7 +146,9 @@ def start_script(name: str, background: bool = False, func: str = "main"):
         return
     python_path = settings.project_path.joinpath('.venv', 'bin', 'Python')
     script_path = (Path(__file__).parent / f"{name}.py").resolve()
-    path = settings.project_path / f'{name}_nohup.out'
+    nohup_dir = settings.project_path / 'script_nohup'
+    nohup_dir.mkdir(exist_ok=True)
+    path = nohup_dir / f'{name}_nohup.out'
     _console.print(f"{python_path} {script_path}")
 
     with open(path, 'w') as f:
