@@ -127,6 +127,7 @@ dependencies = [
     { name = "psutil" },
     { name = "pydantic" },
     { name = "rich" },
+    { name = "talipp" },
     { name = "uvicorn" },
 ]
 
@@ -141,6 +142,7 @@ requires-dist = [
     { name = "psutil", specifier = ">=7.0.0" },
     { name = "pydantic", specifier = ">=2.11.3" },
     { name = "rich", specifier = ">=14.0.0" },
+    { name = "talipp", specifier = ">=2.5.0" },
     { name = "uvicorn", specifier = ">=0.34.0" },
 ]
 
@@ -783,6 +785,15 @@ dependencies = [
 sdist = { url = "https://mirrors.aliyun.com/pypi/packages/04/1b/52b27f2e13ceedc79a908e29eac426a63465a1a01248e5f24aa36a62aeb3/starlette-0.46.1.tar.gz", hash = "sha256:3c88d58ee4bd1bb807c0d1acb381838afc7752f9ddaec81bbe4383611d833230" }
 wheels = [
     { url = "https://mirrors.aliyun.com/pypi/packages/a0/4b/528ccf7a982216885a1ff4908e886b8fb5f19862d1962f56a3fce2435a70/starlette-0.46.1-py3-none-any.whl", hash = "sha256:77c74ed9d2720138b25875133f3a2dae6d854af2ec37dceb56aef370c1d8a227" },
+]
+
+[[package]]
+name = "talipp"
+version = "2.5.0"
+source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/1c/c2/2046189f4dd4b80a8159ebf01d7b4e4e6407f38473b51bce203730f2e97b/talipp-2.5.0.tar.gz", hash = "sha256:41326000305c9ead01031b7973386aea57ab30c025b6142615f7bb78f06d8967" }
+wheels = [
+    { url = "https://mirrors.aliyun.com/pypi/packages/39/2c/106dbf06fb457eebe644b7fa5d5e313499b4698f8c9d037c1af6214c547d/talipp-2.5.0-py3-none-any.whl", hash = "sha256:75740433e60b2fc5df2cf75dd54c91f898d10b1c1e83bdb5bb6d653170c60fe7" },
 ]
 
 [[package]]
