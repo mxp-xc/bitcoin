@@ -9,10 +9,10 @@ from ccxt.pro import Exchange
 from loguru import logger
 from pydantic import BaseModel
 
-from trading import utils
-from trading.exceptions import StopTradingException
-from trading.helper import OrderBlockParser
-from trading.schema.base import OrderBlock, KLine
+from bitcoin.trading import utils
+from bitcoin.trading.exceptions import StopTradingException
+from bitcoin.trading.helper import OrderBlockParser
+from bitcoin.trading.schema.base import OrderBlock, KLine
 from .break_even import BreakEvenListenerFactory
 from .break_even import BreakEvenStrategyTypedDict
 from .listener import PositionWrapper

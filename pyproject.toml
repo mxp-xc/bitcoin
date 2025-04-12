@@ -11,10 +11,19 @@ dependencies = [
     "jinja2>=3.1.6",
     "loguru>=0.7.3",
     "orjson>=3.10.16",
+    "psutil>=7.0.0",
     "pydantic>=2.11.3",
+    "rich>=14.0.0",
     "uvicorn>=0.34.0",
 ]
 
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
 default = true
+
+[project.scripts]
+script_ctl = "bitcoin.scripts.script_ctl:main"
+
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"

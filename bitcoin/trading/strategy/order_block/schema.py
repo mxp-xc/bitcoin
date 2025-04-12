@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from ccxt.base.types import OrderSide
 from pydantic import BaseModel, ConfigDict
 
-from trading.schema.base import OrderBlock, KLine
+from bitcoin.trading.schema.base import OrderBlock, KLine
 
 if TYPE_CHECKING:
     # for dev

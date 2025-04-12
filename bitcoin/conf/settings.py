@@ -18,7 +18,7 @@ if sys.platform == 'win32':
 
 
 class _Settings(BaseModel):
-    project_path: Path = Path(__file__).parent.parent.resolve()
+    project_path: Path = Path(__file__).parent.parent.parent.resolve()
 
     debug: bool = True
 

@@ -6,7 +6,7 @@ from ccxt.base.types import Position
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
-from trading.schema.base import KLine
+from bitcoin.trading.schema.base import KLine
 from .schema import PlaceOrderWrapper
 
 if TYPE_CHECKING:

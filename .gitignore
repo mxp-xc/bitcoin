@@ -6,3 +6,4 @@ _dev.py
 test*.py
 identifier.sqlite
 logs
+*.egg-info

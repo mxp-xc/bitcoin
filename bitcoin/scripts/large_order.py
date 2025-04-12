@@ -12,8 +12,8 @@ import orjson
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
-from conf import settings
-from trading import utils
+from bitcoin.conf import settings
+from bitcoin.trading import utils
 
 
 class OrderBookData(BaseModel):
@@ -290,7 +290,7 @@ class LargeOrderWatcher(object):
             await utils.send_wx_message(message, key=self._wx_key)
 
 
-async def main():
+async def run_main():
     swap_watcher = LargeOrderWatcher(
         symbol="BTC:USDT",
         tick=10,
@@ -311,5 +311,9 @@ async def main():
     )
 
 
+def main():
+    asyncio.run(run_main())
+
+
 if __name__ == '__main__':
-    asyncio.run(main())
+    main()

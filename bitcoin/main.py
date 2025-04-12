@@ -7,9 +7,9 @@ from fastapi.responses import HTMLResponse, ORJSONResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from conf import settings
-from trading.helper import OrderBlockParser, OrderBlockResult
-from trading.schema.base import KLine
+from bitcoin.conf import settings
+from bitcoin.trading.helper import OrderBlockParser, OrderBlockResult
+from bitcoin.trading.schema.base import KLine
 from web.datastruct import Result
 
 app = FastAPI()

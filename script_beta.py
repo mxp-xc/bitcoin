@@ -4,12 +4,12 @@ import datetime  # noqa
 
 from loguru import logger
 
-from conf import settings
-from trading.schema.base import KLine, OrderBlock
-from trading.strategy.order_block.base import CustomRunnerOptions
-from trading.strategy.order_block.coin.btc import BTCRunner, BTCRunner2
-from trading.strategy.order_block.coin.eth import ETH5MRunner
-from trading.strategy.order_block.manager import RunnerManager
+from bitcoin.conf import settings
+from bitcoin.trading.schema.base import KLine, OrderBlock
+from bitcoin.trading.strategy.order_block.base import CustomRunnerOptions
+from bitcoin.trading.strategy.order_block.coin.btc import BTCRunner, BTCRunner2
+from bitcoin.trading.strategy.order_block.coin.eth import ETH5MRunner
+from bitcoin.trading.strategy.order_block.manager import RunnerManager
 
 BTCRunner, BTCRunner2, ETH5MRunner  # noqa
 

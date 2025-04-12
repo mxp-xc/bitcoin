@@ -3,11 +3,11 @@ import asyncio
 
 from loguru import logger
 
-from conf import settings
-from trading.strategy.order_block.base import CustomRunnerOptions, RunnerOption
-from trading.strategy.order_block.coin.btc import BTCRunner, BTCRunner2
-from trading.strategy.order_block.coin.eth import ETH5MRunner
-from trading.strategy.order_block.manager import RunnerManager
+from bitcoin.conf import settings
+from bitcoin.trading.strategy.order_block.base import CustomRunnerOptions, RunnerOption
+from bitcoin.trading.strategy.order_block.coin.btc import BTCRunner, BTCRunner2
+from bitcoin.trading.strategy.order_block.coin.eth import ETH5MRunner
+from bitcoin.trading.strategy.order_block.manager import RunnerManager
 
 
 def _test():

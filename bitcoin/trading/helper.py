@@ -6,9 +6,9 @@ from typing import Callable
 from loguru import logger
 from pydantic import BaseModel
 
-from conf import settings
-from trading import utils
-from trading.schema.base import KLine, OrderBlock
+from bitcoin.conf import settings
+from bitcoin.trading import utils
+from bitcoin.trading.schema.base import KLine, OrderBlock
 
 
 class OrderBlockResult(BaseModel):

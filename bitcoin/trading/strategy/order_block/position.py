@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 from typing import TYPE_CHECKING, Any, TypedDict, Literal
 
-from trading import utils
-from trading.exceptions import StopTradingException
+from bitcoin.trading import utils
+from bitcoin.trading.exceptions import StopTradingException
 from .schema import OrderInfo
 
 if TYPE_CHECKING:

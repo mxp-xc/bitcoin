@@ -6,8 +6,8 @@ from typing import Any, TypedDict, Literal, TYPE_CHECKING, NotRequired
 from ccxt.base.exchange import Exchange
 from loguru import logger
 
-from conf import settings
-from trading.schema.base import KLine
+from bitcoin.conf import settings
+from bitcoin.trading.schema.base import KLine
 from .listener import KLinePositionListener
 
 if TYPE_CHECKING:

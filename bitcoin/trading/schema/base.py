@@ -6,7 +6,7 @@ from ccxt.base.types import PositionSide
 from pydantic import BaseModel, ConfigDict, AliasGenerator, PositiveInt, Field
 from pydantic.alias_generators import to_camel, to_snake
 
-from trading import utils
+from bitcoin.trading import utils
 
 
 class ToCamelModel(BaseModel):

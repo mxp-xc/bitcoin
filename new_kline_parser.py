@@ -3,8 +3,8 @@ import asyncio
 
 from loguru import logger
 
-from conf import settings
-from trading.schema.base import KLine
+from bitcoin.conf import settings
+from bitcoin.trading.schema.base import KLine
 
 
 async def main():
