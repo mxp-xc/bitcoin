@@ -144,7 +144,7 @@ def start_script(name: str, background: bool = False, func: str = "main"):
     if not background:
         runner()
         return
-    python_path = settings.project_path.joinpath('.venv', 'bin', 'Python')
+    python_path = sys.executable
     script_path = (Path(__file__).parent / f"{name}.py").resolve()
     nohup_dir = settings.project_path / 'script_nohup'
     nohup_dir.mkdir(exist_ok=True)
