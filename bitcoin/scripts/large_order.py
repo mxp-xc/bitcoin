@@ -12,7 +12,7 @@ import orjson
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
-from bitcoin.conf import settings
+from bitcoin.conf import settings  # noqa
 from bitcoin.trading import utils
 
 
@@ -146,6 +146,12 @@ class LargeOrderWatcher(object):
                 elif new_index < old_index:
                     big_volumes_sub.append(
                         f'{price} 大额<font color="info">多单</font>变动(减少) {old_volume} -> {new_volume}')
+
+            if big_volumes_sub or big_volumes_add:
+                now = datetime.datetime.now()
+                await self._log_and_send_wx_message(f"""{utils.format_datetime(now)} ({self.type_desc})
+{"\n".join(itertools.chain(big_volumes_add, big_volumes_sub))}
+            """)
 
             big_volumes_add, big_volumes_sub = [], []
             for price, new_volume in sorted(new_asks.items(), key=lambda i: i[0]):

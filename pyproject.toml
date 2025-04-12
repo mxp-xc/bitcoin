@@ -15,6 +15,7 @@ dependencies = [
     "pydantic>=2.11.3",
     "rich>=14.0.0",
     "talipp>=2.5.0",
+    "typer>=0.15.2",
     "uvicorn>=0.34.0",
 ]
 
@@ -23,7 +24,7 @@ url = "https://mirrors.aliyun.com/pypi/simple"
 default = true
 
 [project.scripts]
-script_ctl = "bitcoin.scripts.script_ctl:main"
+script_ctl = "bitcoin.scripts.script_ctl:app"
 
 [build-system]
 requires = ['hatchling']
