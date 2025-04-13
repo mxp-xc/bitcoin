@@ -3,6 +3,7 @@ import datetime
 from collections import OrderedDict
 from typing import Callable
 
+from ccxt.async_support import Exchange
 from loguru import logger
 from pydantic import BaseModel
 
@@ -19,6 +20,45 @@ class OrderBlockResult(BaseModel):
 class Options(BaseModel):
     min_fvg: int
     merge: bool
+
+
+class KLineWrapper(BaseModel):
+    kline: KLine
+    closed: bool
+    initialize: bool
+
+
+class KLineWatcher(object):
+    def __init__(self, exchange: Exchange):
+        self.exchange = exchange
+
+    async def async_iter(self, symbol: str, timeframe: str, *args, **kwargs):
+        initialize = await self._watch_klines(
+            symbol,
+            timeframe,
+            since=int((datetime.datetime.now() - datetime.timedelta(days=1)).timestamp() * 100),
+            *args,
+            **kwargs
+        )
+        *klines, prev_kline = initialize
+        for kline in klines:
+            yield KLineWrapper(kline=kline, closed=True, initialize=True)
+
+        while True:
+            klines = await self._watch_klines(symbol, timeframe, *args, **kwargs)
+            for kline in klines:
+                closed = kline.opening_time > prev_kline.opening_time
+                yield KLineWrapper(kline=prev_kline, closed=closed, initialize=False)
+                prev_kline = kline
+
+    async def _watch_klines(self, symbol, timeframe, *args, **kwargs) -> list[KLine]:
+        return [
+            KLine.from_ccxt(ohlcv)
+            for ohlcv in await self.exchange.watch_ohlcv(
+                symbol, timeframe=timeframe,
+                *args, **kwargs
+            )
+        ]
 
 
 class OrderBlockParser(object):
