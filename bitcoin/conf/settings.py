@@ -6,8 +6,9 @@ from pathlib import Path
 
 import ccxt as sync_ccxt
 from ccxt import pro as async_ccxt
+from dotenv import load_dotenv
 from loguru import logger
-from pydantic import BaseModel, ConfigDict
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .schema import ExchangeApiInfo
 
@@ -16,22 +17,23 @@ if sys.platform == 'win32':
 
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+_project_path: Path = Path(__file__).parent.parent.parent.resolve()
+_dot_env_path = _project_path / '.env'
 
-class _Settings(BaseModel):
-    project_path: Path = Path(__file__).parent.parent.parent.resolve()
+
+class _Settings(BaseSettings):
+    project_path: Path = _project_path
 
     debug: bool = True
-
-    btc_spot_wx_bot_key: str | None = None
-
-    btc_swap_wx_bot_key: str | None = None
 
     proxy_http_host: str | None = None
 
     proxy_http_port: int | None = None
 
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True
+    model_config = SettingsConfigDict(
+        arbitrary_types_allowed=True,
+        env_file=_dot_env_path,
+        extra="allow"
     )
 
     def get_proxy_http_base_url(self, schema: str = "http") -> str | None:
@@ -115,6 +117,8 @@ class _Settings(BaseModel):
             compression="zip"  # 压缩旧的日志文件为 zip 格式
         )
 
+
+load_dotenv(_dot_env_path)
 
 settings = _Settings()
 settings._config_logger()  # noqa

@@ -3,6 +3,7 @@ import asyncio
 import datetime
 import gzip
 import itertools
+import os
 from collections import defaultdict
 from functools import cached_property
 from typing import Literal
@@ -297,12 +298,13 @@ class LargeOrderWatcher(object):
 
 
 async def run_main():
+    btc_swap_wx_bot_key = os.getenv("BTC_SWAP_WX_BOT_KEY")
     swap_watcher = LargeOrderWatcher(
         symbol="BTC:USDT",
         tick=10,
         thresholds=list(itertools.chain([300], range(500, 1300, 100))),
         type_=1,
-        wx_key=settings.btc_swap_wx_bot_key
+        wx_key=btc_swap_wx_bot_key
     )
     # spot_watcher = LargeOrderWatcher(
     #     symbol="BTC:USDT",

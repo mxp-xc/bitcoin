@@ -33,6 +33,7 @@ class KLineWatcher(object):
         self.exchange = exchange
 
     async def async_iter(self, symbol: str, timeframe: str, *args, **kwargs):
+        logger.info(f"initialize for `{symbol} - {timeframe}`")
         initialize = await self._watch_klines(
             symbol,
             timeframe,
@@ -44,6 +45,7 @@ class KLineWatcher(object):
         for kline in klines:
             yield KLineWrapper(kline=kline, closed=True, initialize=True)
 
+        logger.info(f"start watch klines for `{symbol} - {timeframe}`")
         while True:
             klines = await self._watch_klines(symbol, timeframe, *args, **kwargs)
             for kline in klines:

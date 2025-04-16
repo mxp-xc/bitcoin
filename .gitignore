@@ -9,3 +9,4 @@ logs
 *.egg-info
 *nohup.out
 script_nohup
+.env

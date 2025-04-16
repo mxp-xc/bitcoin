@@ -13,6 +13,7 @@ dependencies = [
     "orjson>=3.10.16",
     "psutil>=7.0.0",
     "pydantic>=2.11.3",
+    "pydantic-settings>=2.8.1",
     "rich>=14.0.0",
     "talipp>=2.5.0",
     "typer>=0.15.2",

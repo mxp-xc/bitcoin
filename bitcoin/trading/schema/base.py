@@ -65,11 +65,15 @@ class Position(ToCamelModel):
     __repr__ = as_zh_str
 
 
-class KLine(BaseModel):
+class KLineProtocol(BaseModel):
+    highest_price: float
+
+    lowest_price: float
+
+
+class KLine(KLineProtocol):
     opening_time: datetime.datetime  # 开盘时间
     opening_price: float  # 开盘价格
-    highest_price: float  # 最高价
-    lowest_price: float  # 最低价
     closing_price: float  # 收盘价(当前K线未结束的及为最新价)
     volume: float  # 成交量
 
