@@ -28,9 +28,15 @@ class KLineWrapper(BaseModel):
     initialize: bool
 
 
+class MaxWatchRetry(Exception):
+    pass
+
+
 class KLineWatcher(object):
-    def __init__(self, exchange: Exchange):
+    def __init__(self, exchange: Exchange, max_attempts: int = 3):
         self.exchange = exchange
+        self.max_attempts = max_attempts
+        self._retry_interval = 3
 
     async def async_iter(self, symbol: str, timeframe: str, *args, **kwargs):
         logger.info(f"initialize for `{symbol} - {timeframe}`")
@@ -54,13 +60,23 @@ class KLineWatcher(object):
                 prev_kline = kline
 
     async def _watch_klines(self, symbol, timeframe, *args, **kwargs) -> list[KLine]:
-        return [
-            KLine.from_ccxt(ohlcv)
-            for ohlcv in await self.exchange.watch_ohlcv(
-                symbol, timeframe=timeframe,
-                *args, **kwargs
-            )
-        ]
+        exception = None
+        for i in range(self.max_attempts):
+            try:
+                return [
+                    KLine.from_ccxt(ohlcv)
+                    for ohlcv in await self.exchange.watch_ohlcv(
+                        symbol, timeframe=timeframe,
+                        *args, **kwargs
+                    )
+                ]
+            except Exception as exc:
+                exception = exc
+                logger.exception(f"Failed to watch_ohlcv. : {exc!s} retry: {i}")
+                await asyncio.sleep(self._retry_interval)
+                continue
+        if exception:
+            raise MaxWatchRetry("Failed to watch ohlcv. max retry") from exception
 
 
 class OrderBlockParser(object):
