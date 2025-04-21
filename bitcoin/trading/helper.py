@@ -43,9 +43,14 @@ class KLineWatcher(object):
         initialize = await self._watch_klines(
             symbol,
             timeframe,
-            since=int((datetime.datetime.now() - datetime.timedelta(days=1)).timestamp() * 100),
+            since=int(
+                (
+                    datetime.datetime.now() - datetime.timedelta(days=1)
+                ).timestamp()
+                * 100
+            ),
             *args,
-            **kwargs
+            **kwargs,
         )
         *klines, prev_kline = initialize
         for kline in klines:
@@ -53,30 +58,40 @@ class KLineWatcher(object):
 
         logger.info(f"start watch klines for `{symbol} - {timeframe}`")
         while True:
-            klines = await self._watch_klines(symbol, timeframe, *args, **kwargs)
+            klines = await self._watch_klines(
+                symbol, timeframe, *args, **kwargs
+            )
             for kline in klines:
                 closed = kline.opening_time > prev_kline.opening_time
-                yield KLineWrapper(kline=prev_kline, closed=closed, initialize=False)
+                yield KLineWrapper(
+                    kline=prev_kline, closed=closed, initialize=False
+                )
                 prev_kline = kline
 
-    async def _watch_klines(self, symbol, timeframe, *args, **kwargs) -> list[KLine]:
+    async def _watch_klines(
+        self, symbol, timeframe, *args, **kwargs
+    ) -> list[KLine] | None:
         exception = None
         for i in range(self.max_attempts):
             try:
                 return [
                     KLine.from_ccxt(ohlcv)
                     for ohlcv in await self.exchange.watch_ohlcv(
-                        symbol, timeframe=timeframe,
-                        *args, **kwargs
+                        symbol, timeframe=timeframe, *args, **kwargs
                     )
                 ]
             except Exception as exc:
                 exception = exc
-                logger.exception(f"Failed to watch_ohlcv. : {exc!s} retry: {i}")
+                logger.exception(
+                    f"Failed to watch_ohlcv. : {exc!s} retry: {i}"
+                )
                 await asyncio.sleep(self._retry_interval)
                 continue
         if exception:
-            raise MaxWatchRetry("Failed to watch ohlcv. max retry") from exception
+            raise MaxWatchRetry(
+                "Failed to watch ohlcv. max retry"
+            ) from exception
+        return None
 
 
 class OrderBlockParser(object):
@@ -94,7 +109,7 @@ class OrderBlockParser(object):
         timeframe: str,
         min_fvg: int = 0,
         order_block_parser: Callable[[KLine, KLine, KLine], str] | None = None,
-        merge: bool = False
+        merge: bool = False,
     ):
         delta = self.granularity_map.get(timeframe)
         if delta is None:
@@ -113,7 +128,11 @@ class OrderBlockParser(object):
         """下一根k线的收盘时间"""
         last_kline = self.get_last_parse_kline()
         if last_kline:
-            return last_kline.opening_time + self._delta - datetime.timedelta(seconds=1)
+            return (
+                last_kline.opening_time
+                + self._delta
+                - datetime.timedelta(seconds=1)
+            )
         return None
 
     def get_last_parse_kline(self) -> KLine | None:
@@ -157,11 +176,12 @@ class OrderBlockParser(object):
             self._current_order_block.klines.append(kline)
         else:
             order_block = self._current_order_block = OrderBlock(
-                klines=list(self._buffer),
-                side=direction
+                klines=list(self._buffer), side=direction
             )
 
-            self.order_blocks[utils.format_datetime(order_block.start_datetime)] = order_block
+            self.order_blocks[
+                utils.format_datetime(order_block.start_datetime)
+            ] = order_block
         self._merge_order_block()
 
     def _trigger_test(self, kline: KLine):
@@ -184,28 +204,32 @@ class OrderBlockParser(object):
 
     def _default_parse(self, k1: KLine, k2: KLine, k3: KLine):  # noqa
         if (
-            k2.entity_highest_price >=
-            k1.lowest_price >
-            k3.highest_price >=
-            k2.entity_lowest_price
+            k2.entity_highest_price
+            >= k1.lowest_price
+            > k3.highest_price
+            >= k2.entity_lowest_price
         ):
             fvg = k1.lowest_price - k3.highest_price
             if fvg >= self.options.min_fvg:
                 return "short"
             else:
-                logger.info(f"k线{k1.opening_time}不满足最小fvg. {fvg} < {self.options.min_fvg}")
+                logger.info(
+                    f"k线{k1.opening_time}不满足最小fvg. {fvg} < {self.options.min_fvg}"
+                )
 
         if (
-            k2.entity_lowest_price <=
-            k1.highest_price <
-            k3.lowest_price <=
-            k2.entity_highest_price
+            k2.entity_lowest_price
+            <= k1.highest_price
+            < k3.lowest_price
+            <= k2.entity_highest_price
         ):
             fvg = k3.lowest_price - k1.highest_price
             if fvg >= self.options.min_fvg:
                 return "long"
             else:
-                logger.info(f"k线{k1.opening_time}不满足最小fvg. {fvg} < {self.options.min_fvg}")
+                logger.info(
+                    f"k线{k1.opening_time}不满足最小fvg. {fvg} < {self.options.min_fvg}"
+                )
         return None
 
     def _merge_order_block(self):
@@ -221,10 +245,7 @@ async def main():
         await exchange.watch_ohlcv(symbol)
         while True:
             ohlcv = await exchange.watch_ohlcv(symbol)
-            print([
-                KLine.from_ccxt(item)
-                for item in ohlcv
-            ])
+            print([KLine.from_ccxt(item) for item in ohlcv])
         # klines = [
         #     KLine.from_ccxt(kl_)
         #     for kl_ in
@@ -239,5 +260,5 @@ async def main():
         #     print(ob_.desc())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())

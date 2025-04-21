@@ -45,7 +45,7 @@ def get_running_script(ignored_error: bool = False):
     for proc in psutil.process_iter(["pid", "name", "cmdline"]):
         if proc.info["pid"] == os.getpid():
             continue
-        cmdline = proc.info['cmdline']
+        cmdline = proc.info["cmdline"]
         if not cmdline:
             continue
         try:
@@ -59,13 +59,17 @@ def get_running_script(ignored_error: bool = False):
                 if script not in part:
                     continue
                 if script in running_script and not ignored_error:
-                    raise RuntimeError(f"exist more than 2 script: `{script}` {cmdline}")
+                    raise RuntimeError(
+                        f"exist more than 2 script: `{script}` {cmdline}"
+                    )
                 running_script.add(script)
-                running_process.append({
-                    "pid": proc.info["pid"],
-                    "script": script,
-                    "cmdline": " ".join(cmdline)
-                })
+                running_process.append(
+                    {
+                        "pid": proc.info["pid"],
+                        "script": script,
+                        "cmdline": " ".join(cmdline),
+                    }
+                )
     return running_process
 
 
@@ -85,21 +89,14 @@ def list_script(ignored_error: bool = False):
     table.add_column("script", justify="center")
     table.add_column("cmdline", justify="center")
     for d in running_script:
-        table.add_row(
-            str(d["pid"]),
-            d["script"],
-            d["cmdline"]
-        )
+        table.add_row(str(d["pid"]), d["script"], d["cmdline"])
 
     _console.print(table)
 
 
 @app.command("stop")
 def stop_script(name: str):
-    running_script = {
-        s["script"]: s
-        for s in get_running_script()
-    }
+    running_script = {s["script"]: s for s in get_running_script()}
     if name != "all":
         script = running_script.get(name, None)
         if script:
@@ -114,13 +111,13 @@ def stop_script(name: str):
 
     _console.print(f"start stop {scripts}")
     for script in scripts:
-        script_name = script['script']
+        script_name = script["script"]
         process = psutil.Process(script["pid"])
         process.terminate()
         for _ in range(20):
             if not process.is_running():
                 break
-            time.sleep(.1)
+            time.sleep(0.1)
         else:
             process.kill()
 
@@ -134,7 +131,9 @@ def stop_script(name: str):
 def start_script(name: str, background: bool = False, func: str = "main"):
     support_script = get_support_scripts()
     if name not in support_script:
-        _console.print(f"script: {name} not found. support script: {support_script}")
+        _console.print(
+            f"script: {name} not found. support script: {support_script}"
+        )
         return
     stop_script(name)
 
@@ -146,24 +145,22 @@ def start_script(name: str, background: bool = False, func: str = "main"):
         return
     python_path = sys.executable
     script_path = (Path(__file__).parent / f"{name}.py").resolve()
-    nohup_dir = settings.project_path / 'script_nohup'
+    nohup_dir = settings.project_path / "script_nohup"
     nohup_dir.mkdir(exist_ok=True)
-    path = nohup_dir / f'{name}_nohup.out'
+    path = nohup_dir / f"{name}_nohup.out"
     _console.print(f"{python_path} {script_path}")
 
-    with open(path, 'w') as f:
+    with open(path, "w") as f:
         process = subprocess.Popen(
             [str(python_path), str(script_path)],
             stdout=f,
             stderr=subprocess.STDOUT,
-            start_new_session=True
+            start_new_session=True,
         )
         _console.print(process, process.pid)
 
     tail_process = subprocess.Popen(
-        ["tail", "-f", str(path)],
-        stdout=sys.stdout,
-        stderr=subprocess.STDOUT
+        ["tail", "-f", str(path)], stdout=sys.stdout, stderr=subprocess.STDOUT
     )
 
     # 捕获 Ctrl+C 信号，优雅退出
@@ -176,5 +173,5 @@ def start_script(name: str, background: bool = False, func: str = "main"):
     signal.pause()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     app()

@@ -24,6 +24,12 @@ dependencies = [
 url = "https://mirrors.aliyun.com/pypi/simple"
 default = true
 
+[tool.ruff]
+line-length = 79
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
 [project.scripts]
 script_ctl = "bitcoin.scripts.script_ctl:app"
 

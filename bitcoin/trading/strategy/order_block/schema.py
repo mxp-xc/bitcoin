@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 from ccxt.base.types import OrderSide
 from pydantic import BaseModel, ConfigDict
 
-from bitcoin.trading.schema.base import OrderBlock, KLine
+from bitcoin.trading.schema.base import KLine, OrderBlock
 
 if TYPE_CHECKING:
     # for dev
@@ -30,6 +30,4 @@ class PlaceOrderContext(BaseModel):
     mutex_order_blocs: list[OrderBlock]
     current_kline: KLine
 
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True
-    )
+    model_config = ConfigDict(arbitrary_types_allowed=True)

@@ -33,7 +33,13 @@ class RSIProcessContext(BaseModel):
 
 
 class RSIWatcher(object):
-    def __init__(self, watcher: KLineWatcher, symbol: str, timeframe: str, wx_key: str | None = None):
+    def __init__(
+        self,
+        watcher: KLineWatcher,
+        symbol: str,
+        timeframe: str,
+        wx_key: str | None = None,
+    ):
         self.symbol = symbol
         self.timeframe = timeframe
         self._wx_key = wx_key
@@ -47,12 +53,15 @@ class RSIWatcher(object):
         # 是否一直处于穿过状态
         prev_rsi_status: RSIStatus | None = None
         first_log = False
-        async for wrapper in self._watcher.async_iter(self.symbol, self.timeframe):
+        async for wrapper in self._watcher.async_iter(
+            self.symbol, self.timeframe
+        ):
             if not wrapper.closed:
                 if not first_log and not wrapper.initialize:
                     logger.info(
                         f"({self.symbol} - {self.timeframe} - {wrapper.kline.opening_time}) "
-                        f"最新 {prev_rsi_status}")
+                        f"最新 {prev_rsi_status}"
+                    )
                     first_log = True
                 continue
             kline = wrapper.kline
@@ -74,7 +83,7 @@ class RSIWatcher(object):
                 await self._log_rsi_status(
                     f"初始化prev_rsi_status: {prev_rsi_status.desc_cn()}",
                     context,
-                    send_wx=False
+                    send_wx=False,
                 )
                 continue
             if not wrapper.initialize:
@@ -84,8 +93,12 @@ class RSIWatcher(object):
     async def _process_rsi_status(self, context: RSIProcessContext):
         prev_rsi_status = context.prev_rsi_status
         current_rsi_status = context.current_rsi_status
-        assert prev_rsi_status, f"prev_rsi_status: {prev_rsi_status} must not be None"
-        assert current_rsi_status, f"prev_rsi_status: {current_rsi_status} must not be None"
+        assert prev_rsi_status, (
+            f"prev_rsi_status: {prev_rsi_status} must not be None"
+        )
+        assert current_rsi_status, (
+            f"prev_rsi_status: {current_rsi_status} must not be None"
+        )
 
         if prev_rsi_status == current_rsi_status:  # 没有变化不处理
             return
@@ -105,7 +118,7 @@ class RSIWatcher(object):
         message,
         contex: RSIProcessContext,
         send_wx: bool = True,
-        level: str = 'info'
+        level: str = "info",
     ):
         final_message = f"""{self.symbol}({self.timeframe} - {contex.kline.opening_time}) {message}"""
         getattr(logger, level)(final_message)
@@ -122,14 +135,19 @@ class RSIWatcher(object):
 
 
 class RSIWatcherManger(object):
-    def __init__(self, symbols: list[str], timeframes: list[str], wx_key: str | None = None):
+    def __init__(
+        self,
+        symbols: list[str],
+        timeframes: list[str],
+        wx_key: str | None = None,
+    ):
         self.symbols = symbols
         self.timeframes = timeframes
         self.wx_key = wx_key
 
     async def watch(self):
         rsi_watchers = []
-        async with settings.create_async_exchange_public('bitget') as exchange:
+        async with settings.create_async_exchange_public("bitget") as exchange:
             kline_watcher = KLineWatcher(exchange)
             await exchange.load_markets()
             for symbol in self.symbols:
@@ -140,10 +158,13 @@ class RSIWatcherManger(object):
                         watcher=kline_watcher,
                         symbol=symbol,
                         timeframe=timeframe,
-                        wx_key=self.wx_key
+                        wx_key=self.wx_key,
                     )
                     rsi_watchers.append(rsi_watcher)
-        symbol_time_frames = (f"{watcher.symbol} - {watcher.timeframe}" for watcher in rsi_watchers)
+        symbol_time_frames = (
+            f"{watcher.symbol} - {watcher.timeframe}"
+            for watcher in rsi_watchers
+        )
         message = f"collect rsi watcher:\n{'\n'.join(symbol_time_frames)}"
         logger.info(message)
         if self.wx_key:
@@ -157,13 +178,9 @@ async def entry():
             "PEPE/USDT:USDT",
             "DOGE/USDT:USDT",
             "ADA/USDT:USDT",
-            "SOL/USDT:USDT"
+            "SOL/USDT:USDT",
         ],
-        timeframes=[
-            "1m",
-            "5m",
-            "15m"
-        ],
+        timeframes=["1m", "5m", "15m"],
     )
     await manager.watch()
 
@@ -172,5 +189,5 @@ def main():
     asyncio.run(entry())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

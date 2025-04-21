@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from bitcoin.conf import settings
 from bitcoin.trading.helper import KLineWatcher
 from bitcoin.trading.schema.base import KLine
-from bitcoin.trading.utils import send_wx_message_or_log, format_datetime
+from bitcoin.trading.utils import format_datetime, send_wx_message_or_log
 
 
 class HeatMap(BaseModel):
@@ -38,15 +38,17 @@ class HeatmapWatcher(object):
         self._stopping = False
 
     async def _run(self):
-        await send_wx_message_or_log(f"start watch heatmap. threshold: {self.threshold}", key=self._wx_key)
+        await send_wx_message_or_log(
+            f"start watch heatmap. threshold: {self.threshold}",
+            key=self._wx_key,
+        )
         kline_watcher = KLineWatcher(self.exchange)
         self._heatmaps = await self._get_heatmaps_with_lock()
         asyncio.create_task(self._refresh_heatmap_forever(60))
         time_seen: dict[datetime.datetime, set[str]] = defaultdict(set)
         heatmap_refresh_retry = 0
         async for wrapper in kline_watcher.async_iter(
-            symbol="BTC/USDT:USDT",
-            timeframe="1m"
+            symbol="BTC/USDT:USDT", timeframe="1m"
         ):
             if self._stopping:
                 break
@@ -69,6 +71,7 @@ class HeatmapWatcher(object):
                 )
                 if heatmap_refresh_retry > 3:
                     raise RuntimeError
+                await asyncio.sleep(3)
                 self._heatmaps = await self._get_heatmaps_with_lock()
                 heatmap_refresh_retry += 1
                 continue
@@ -80,12 +83,13 @@ class HeatmapWatcher(object):
             seen = time_seen[kline.opening_time]
             for side, price_size in (
                 ("long", heatmap.long),
-                ("short", heatmap.short)
+                ("short", heatmap.short),
             ):
                 for index, (price, size) in enumerate(price_size):
                     if (
                         size < self.threshold
-                        or price < kline.lowest_price or price > kline.highest_price
+                        or price < kline.lowest_price
+                        or price > kline.highest_price
                     ):
                         continue
                     key = f"{side}-{price}"
@@ -97,7 +101,7 @@ class HeatmapWatcher(object):
                         f"在{price}出现穿透大额{get_side_desc(side)}: {size}.\n"
                         f"上一根k的挂单: {prev_heatmap.long[index][1]},\n"
                         f"交易商成交量: {kline.volume}",
-                        key=self._wx_key
+                        key=self._wx_key,
                     )
                     seen.add(key)
 
@@ -121,18 +125,21 @@ class HeatmapWatcher(object):
                 break
         else:
             logger.warning(f"没有找到收线对应的heatmap: {kline}")
-            await send_wx_message_or_log(f"{kline_time}收线, 成交量: {kline.volume}", key=self._wx_key)
+            await send_wx_message_or_log(
+                f"{kline_time}收线, 成交量: {kline.volume}", key=self._wx_key
+            )
             return
 
         seen: dict[str, float] = {}
         for side, price_size in (
             ("long", heatmap.long),
-            ("short", heatmap.short)
+            ("short", heatmap.short),
         ):
             for index, (price, size) in enumerate(price_size):
                 if (
                     size < self.threshold
-                    or price < kline.lowest_price or price > kline.highest_price
+                    or price < kline.lowest_price
+                    or price > kline.highest_price
                 ):
                     continue
                 key = f"{side}-{price}"
@@ -147,7 +154,7 @@ class HeatmapWatcher(object):
         if not messages:
             await send_wx_message_or_log(
                 f"{kline_time}收线重新检测, 不存在穿透的大额挂单",
-                key=self._wx_key
+                key=self._wx_key,
             )
             return
         await send_wx_message_or_log(
@@ -155,7 +162,7 @@ class HeatmapWatcher(object):
             f"{'\n'.join(messages)}\n"
             f"总挂单额: {total_size}\n"
             f"交易商成交量: {kline.volume}",
-            key=self._wx_key
+            key=self._wx_key,
         )
 
     async def _refresh_heatmap_forever(self, delay: float = 60):
@@ -170,7 +177,7 @@ class HeatmapWatcher(object):
             aiohttp.ClientSession(
                 connector=aiohttp.TCPConnector(verify_ssl=False)
             ) as self.session,
-            settings.create_async_exchange_public('binance') as self.exchange
+            settings.create_async_exchange_public("binance") as self.exchange,
         ):
             try:
                 await self._run()
@@ -178,10 +185,12 @@ class HeatmapWatcher(object):
                 await send_wx_message_or_log(
                     f"Failed to run heatmap: {exc!s}",
                     key=self._wx_key,
-                    level='exception'
+                    level="exception",
                 )
             finally:
-                await send_wx_message_or_log("stop heatmap bot", key=self._wx_key)
+                await send_wx_message_or_log(
+                    "stop heatmap bot", key=self._wx_key
+                )
 
     async def _get_heatmaps_with_lock(self):
         async with self._heatmap_lock:
@@ -190,11 +199,13 @@ class HeatmapWatcher(object):
                     return await self._get_heatmaps()
                 except Exception as exc:
                     await send_wx_message_or_log(
-                        f"Failed to get heatmap: {exc!s}. wait 1min",
-                        level='exception',
-                        key=self._wx_key
+                        f"Failed to get heatmap: {type(exc)}({exc!s}). wait 1min",
+                        level="exception",
+                        key=self._wx_key,
                     )
                     await asyncio.sleep(60)
+                    return None
+            return None
 
     async def _get_heatmaps(self) -> list[HeatMap]:
         now = datetime.datetime.now()
@@ -203,12 +214,12 @@ class HeatmapWatcher(object):
         async with self.session.get(
             url="https://capi.coinglass.com/liquidity-heatmap/api/liquidity/v4/heatmap",
             params={
-                'symbol': 'Binance_BTCUSDT#heatmap',
-                'interval': 'm1',
-                'startTime': int(start_datetime.timestamp()),
-                'minLimit': 'false',
-                'endTime': int(now.timestamp()),
-            }
+                "symbol": "Binance_BTCUSDT#heatmap",
+                "interval": "m1",
+                "startTime": int(start_datetime.timestamp()),
+                "minLimit": "false",
+                "endTime": int(now.timestamp()),
+            },
         ) as response:
             data = await response.json()
             heatmap_data = data["data"]["data"]
@@ -230,11 +241,13 @@ class HeatmapWatcher(object):
                     ts = prev[0] + interval
                     dt = datetime.datetime.fromtimestamp(ts)
                     assert ts > 2000
-                result.append(HeatMap(
-                    time=dt,
-                    long=tuple((int(item[0]), item[1]) for item in long),
-                    short=tuple((int(item[0]), item[1]) for item in short)
-                ))
+                result.append(
+                    HeatMap(
+                        time=dt,
+                        long=tuple((int(item[0]), item[1]) for item in long),
+                        short=tuple((int(item[0]), item[1]) for item in short),
+                    )
+                )
 
         return result
 
@@ -243,9 +256,9 @@ def main():
     wx_key = os.getenv("HEATMAP_WX_KEY")
     if not wx_key:
         logger.info("not config wx key")
-    watcher = HeatmapWatcher(threshold=40, wx_key=wx_key)
+    watcher = HeatmapWatcher(threshold=200, wx_key=wx_key)
     asyncio.run(watcher.run())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

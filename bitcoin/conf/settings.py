@@ -12,13 +12,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .schema import ExchangeApiInfo
 
-if sys.platform == 'win32':
+if sys.platform == "win32":
     import asyncio
 
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 _project_path: Path = Path(__file__).parent.parent.parent.resolve()
-_dot_env_path = _project_path / '.env'
+_dot_env_path = _project_path / ".env"
 
 
 class _Settings(BaseSettings):
@@ -31,9 +31,7 @@ class _Settings(BaseSettings):
     proxy_http_port: int | None = None
 
     model_config = SettingsConfigDict(
-        arbitrary_types_allowed=True,
-        env_file=_dot_env_path,
-        extra="allow"
+        arbitrary_types_allowed=True, env_file=_dot_env_path, extra="allow"
     )
 
     def get_proxy_http_base_url(self, schema: str = "http") -> str | None:
@@ -45,50 +43,37 @@ class _Settings(BaseSettings):
     @cached_property
     def api_info(self) -> ExchangeApiInfo:
         from ._settings import api_info as default_api_info
+
         return default_api_info
 
     def create_sync_exchange(
-        self,
-        api_info: ExchangeApiInfo | None = None,
-        **kwargs
+        self, api_info: ExchangeApiInfo | None = None, **kwargs
     ) -> sync_ccxt.Exchange:
         return self._create_exchange(sync_ccxt, api_info, **kwargs)
 
     def create_async_exchange(
-        self,
-        api_info: ExchangeApiInfo | None = None,
-        **kwargs
+        self, api_info: ExchangeApiInfo | None = None, **kwargs
     ) -> async_ccxt.Exchange:
         return self._create_exchange(async_ccxt, api_info, **kwargs)
 
     def create_async_exchange_public(
-        self,
-        exchange: str,
-        **kwargs
+        self, exchange: str, **kwargs
     ) -> async_ccxt.Exchange:
         return self._create_exchange(
             async_ccxt, ExchangeApiInfo(exchange=exchange), **kwargs
         )
 
     def _create_exchange(
-        self,
-        module,
-        api_info: ExchangeApiInfo | None = None,
-        **kwargs
+        self, module, api_info: ExchangeApiInfo | None = None, **kwargs
     ):
         api_info = api_info or self.api_info
-        assert api_info.exchange in module.exchanges, f"不支持的交易商: {api_info.exchange}"
-        kws = {
-            "options": {
-                "defaultType": "swap",
-                "maxRetriesOnFailure": 3
-            }
-        }
+        assert api_info.exchange in module.exchanges, (
+            f"不支持的交易商: {api_info.exchange}"
+        )
+        kws = {"options": {"defaultType": "swap", "maxRetriesOnFailure": 3}}
         if api_info.exchange == "bitget":
             # 令bitget支持监听1s的频道
-            kws["options"]["timeframes"] = {
-                "1s": "1s"
-            }
+            kws["options"]["timeframes"] = {"1s": "1s"}
         if api_info.api_key:
             assert api_info.secret and api_info.password
             kws["apiKey"] = api_info.api_key
@@ -107,14 +92,18 @@ class _Settings(BaseSettings):
     def _config_logger(self):  # noqa
         script_file_name = Path(sys.modules["__main__"].__file__).stem
         start_time = datetime.datetime.now().strftime("%Y-%m-%d %H_%M_%S")
-        log_file_path = str(self.project_path.joinpath(f"logs/{script_file_name}_{start_time}.log"))
+        log_file_path = str(
+            self.project_path.joinpath(
+                f"logs/{script_file_name}_{start_time}.log"
+            )
+        )
         logger.add(
             sink=log_file_path,
             format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
             level="DEBUG",
             rotation="30 MB",  # 当文件大小达到 10MB 时，自动创建新的日志文件
             retention="90 days",  # 保留最近 7 天的日志文件
-            compression="zip"  # 压缩旧的日志文件为 zip 格式
+            compression="zip",  # 压缩旧的日志文件为 zip 格式
         )
 
 

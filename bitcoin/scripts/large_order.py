@@ -34,9 +34,7 @@ class ExchangeOrderWrapper(BaseModel):
     lock: asyncio.Lock = asyncio.Lock()
     exchange_volume_map: dict[str, float] = defaultdict(float)
 
-    model_config = ConfigDict(
-        arbitrary_types_allowed=True
-    )
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
 class OrderBookModel(BaseModel):
@@ -44,12 +42,8 @@ class OrderBookModel(BaseModel):
     bids: dict[float, ExchangeOrderWrapper] = defaultdict(ExchangeOrderWrapper)
 
 
-swap_support_exchanges = (
-    "Binance", "OKX", "Bybit", "Bitmex"
-)
-spot_support_exchanges = (
-    "Binance", "OKX"
-)
+swap_support_exchanges = ("Binance", "OKX", "Bybit", "Bitmex")
+spot_support_exchanges = ("Binance", "OKX")
 
 
 class LargeOrderWatcher(object):
@@ -63,7 +57,9 @@ class LargeOrderWatcher(object):
         wx_key: str | None = None,
     ):
         self.obm = OrderBookModel()
-        self.exchanges = swap_support_exchanges if type_ == 1 else spot_support_exchanges
+        self.exchanges = (
+            swap_support_exchanges if type_ == 1 else spot_support_exchanges
+        )
         self.symbol = symbol
         self.tick = tick
         self.thresholds = sorted(thresholds)
@@ -105,12 +101,20 @@ class LargeOrderWatcher(object):
         logger.info("_alert_panorama")
         messages = []
         prev_bids, prev_asks = await self.calc()
-        for price, volume in sorted(prev_asks.items(), key=lambda i: i[0], reverse=True):
+        for price, volume in sorted(
+            prev_asks.items(), key=lambda i: i[0], reverse=True
+        ):
             if volume >= self.lower_threshold:
-                messages.append(f'{price} 存在大额<font color="warning">空单</font> {volume}')
-        for price, volume in sorted(prev_bids.items(), key=lambda i: i[0], reverse=True):
+                messages.append(
+                    f'{price} 存在大额<font color="warning">空单</font> {volume}'
+                )
+        for price, volume in sorted(
+            prev_bids.items(), key=lambda i: i[0], reverse=True
+        ):
             if volume >= self.lower_threshold:
-                messages.append(f'{price} 存在大额<font color="info">多单</font> {volume}')
+                messages.append(
+                    f'{price} 存在大额<font color="info">多单</font> {volume}'
+                )
         if messages:
             now = datetime.datetime.now()
             await self._log_and_send_wx_message(
@@ -128,7 +132,9 @@ class LargeOrderWatcher(object):
         await asyncio.sleep(5)
         await self._alert_panorama()
         if self._alert_panorama_task is None:
-            self._alert_panorama_task = asyncio.create_task(self._alert_panorama_interval())
+            self._alert_panorama_task = asyncio.create_task(
+                self._alert_panorama_interval()
+            )
         logger.info(f"({self.type_desc}) start aware change")
 
         prev_bids, prev_asks = await self.calc()
@@ -136,17 +142,21 @@ class LargeOrderWatcher(object):
             new_bids, new_asks = await self.calc()
             # 比较新的变化
             big_volumes_add, big_volumes_sub = [], []
-            for price, new_volume in sorted(new_bids.items(), key=lambda i: i[0], reverse=True):
+            for price, new_volume in sorted(
+                new_bids.items(), key=lambda i: i[0], reverse=True
+            ):
                 old_volume = prev_bids.get(price, 0)
 
                 new_index = self._find_threshold_index(new_volume)
                 old_index = self._find_threshold_index(old_volume)
                 if new_index > old_index:
                     big_volumes_add.append(
-                        f'{price} 大额<font color="info">多单</font>变动(新增) {old_volume} -> {new_volume}')
+                        f'{price} 大额<font color="info">多单</font>变动(新增) {old_volume} -> {new_volume}'
+                    )
                 elif new_index < old_index:
                     big_volumes_sub.append(
-                        f'{price} 大额<font color="info">多单</font>变动(减少) {old_volume} -> {new_volume}')
+                        f'{price} 大额<font color="info">多单</font>变动(减少) {old_volume} -> {new_volume}'
+                    )
 
             if big_volumes_sub or big_volumes_add:
                 now = datetime.datetime.now()
@@ -155,17 +165,21 @@ class LargeOrderWatcher(object):
             """)
 
             big_volumes_add, big_volumes_sub = [], []
-            for price, new_volume in sorted(new_asks.items(), key=lambda i: i[0]):
+            for price, new_volume in sorted(
+                new_asks.items(), key=lambda i: i[0]
+            ):
                 old_volume = prev_asks.get(price, 0)
 
                 new_index = self._find_threshold_index(new_volume)
                 old_index = self._find_threshold_index(old_volume)
                 if new_index > old_index:
                     big_volumes_add.append(
-                        f'{price} 大额<font color="warning">空单</font>变动(新增) {old_volume} -> {new_volume}')
+                        f'{price} 大额<font color="warning">空单</font>变动(新增) {old_volume} -> {new_volume}'
+                    )
                 elif new_index < old_index:
                     big_volumes_sub.append(
-                        f'{price} 大额<font color="warning">空单</font>变动(减少) {old_volume} -> {new_volume}')
+                        f'{price} 大额<font color="warning">空单</font>变动(减少) {old_volume} -> {new_volume}'
+                    )
 
             if big_volumes_sub or big_volumes_add:
                 now = datetime.datetime.now()
@@ -213,19 +227,24 @@ class LargeOrderWatcher(object):
         except Exception as exc:
             await self._log_and_send_wx_message(
                 f"{self.type_desc} Failed to watch large order: {exc!s}",
-                level="exception"
+                level="exception",
             )
         finally:
             self._stopping = True
-            await self._log_and_send_wx_message(f"({self.type_desc}) large order watcher bot stop")
+            await self._log_and_send_wx_message(
+                f"({self.type_desc}) large order watcher bot stop"
+            )
 
     async def restart(self):
         if self._alert_task is None:
+
             async def _start_alert():
                 try:
                     await self.alert()
-                except Exception:
-                    logger.exception("Failed to run alert")
+                except Exception as exc:
+                    message = f"Failed to run alert: {exc!s}"
+                    logger.exception(message)
+                    await self._send_wx_message(message)
                     raise
                 finally:
                     self._stopping = True
@@ -234,8 +253,7 @@ class LargeOrderWatcher(object):
 
         async with aiohttp.ClientSession() as session:
             async with session.ws_connect(
-                url="wss://wss.coinglass.com/v2/ws",
-                verify_ssl=False
+                url="wss://wss.coinglass.com/v2/ws", verify_ssl=False
             ) as ws:
                 await self._watch(ws)
         logger.info(f"({self.type_desc}) restart client session")
@@ -244,7 +262,9 @@ class LargeOrderWatcher(object):
         logger.info(f"{self.type_desc} subscribe")
         await self.subscribe(ws)
 
-        logger.info(f"{self.type_desc} watch order book. exchanges: {self.exchanges}")
+        logger.info(
+            f"{self.type_desc} watch order book. exchanges: {self.exchanges}"
+        )
         prev_datetime = datetime.datetime.now()
         interval = datetime.timedelta(minutes=1)
         async for message in ws:
@@ -258,7 +278,9 @@ class LargeOrderWatcher(object):
             raw_data = gzip.decompress(message.data)
             item = orjson.loads(raw_data)
             if not item.get("data"):
-                await self._log_and_send_wx_message(f"{self.type_desc} data not recv. wait 1 seconds")
+                await self._log_and_send_wx_message(
+                    f"{self.type_desc} data not recv. wait 1 seconds"
+                )
                 await asyncio.sleep(1)
                 continue
 
@@ -280,15 +302,15 @@ class LargeOrderWatcher(object):
                     "method": "subscribe",
                     "params": [
                         {
-                            f"key": f"{exchange}:{self.symbol}:{self.type_}",
+                            "key": f"{exchange}:{self.symbol}:{self.type_}",
                             "tick": str(self.tick),
-                            "channel": "orderBookV2"
+                            "channel": "orderBookV2",
                         }
-                    ]
+                    ],
                 }
             )
 
-    async def _log_and_send_wx_message(self, message, level='info'):  # noqa
+    async def _log_and_send_wx_message(self, message, level="info"):  # noqa
         getattr(logger, level)(message)
         await self._send_wx_message(message)
 
@@ -306,7 +328,7 @@ async def run_main():
         tick=10,
         thresholds=list(itertools.chain([300], range(500, 1300, 100))),
         type_=1,
-        wx_key=btc_swap_wx_bot_key
+        wx_key=btc_swap_wx_bot_key,
     )
     # spot_watcher = LargeOrderWatcher(
     #     symbol="BTC:USDT",
@@ -325,5 +347,5 @@ def main():
     asyncio.run(run_main())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -49,14 +49,16 @@ async def send_wx_message(content, msg_type: str = "markdown", *, key: str):
                 msg_type: {
                     "content": content,
                     "mentioned_list": [],
-                }
+                },
             },
-            ssl=False
+            ssl=False,
         ) as response:
             response.raise_for_status()
             result_json: dict = await response.json()
             if result_json.get("errcode") != 0:
-                logger.error(f"Failed to send wx message. result: {result_json}")
+                logger.error(
+                    f"Failed to send wx message. result: {result_json}"
+                )
 
 
 async def send_wx_message_or_log(
@@ -64,7 +66,7 @@ async def send_wx_message_or_log(
     msg_type: str = "markdown",
     *,
     key: str | None = None,
-    level: str = 'info'
+    level: str = "info",
 ):
     getattr(logger, level)(content)
     if key:

@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 import datetime
+from enum import StrEnum
 from typing import Literal
 
 from ccxt.base.types import PositionSide
-from pydantic import BaseModel, ConfigDict, AliasGenerator, PositiveInt, Field
+from pydantic import AliasGenerator, BaseModel, ConfigDict, Field, PositiveInt
 from pydantic.alias_generators import to_camel, to_snake
 
 from bitcoin.trading import utils
@@ -12,14 +13,14 @@ from bitcoin.trading import utils
 class ToCamelModel(BaseModel):
     model_config = ConfigDict(
         alias_generator=AliasGenerator(
-            serialization_alias=to_snake,
-            validation_alias=to_camel
+            serialization_alias=to_snake, validation_alias=to_camel
         )
     )
 
 
 class AccountInfo(ToCamelModel):
     """账户信息"""
+
     margin_coin: str
     available: float
     union_available: float
@@ -27,16 +28,21 @@ class AccountInfo(ToCamelModel):
 
 class Position(ToCamelModel):
     """仓位"""
+
     product_type: str  # 产品类型
     symbol: str  # 币种
     hold_side: Literal["long", "short"]  # "持仓方向(多, 空)
-    margin_mode: Literal["crossed", "isolated"]  # 保证金模式: crossed(全仓), isolated(逐仓)
+    margin_mode: Literal[
+        "crossed", "isolated"
+    ]  # 保证金模式: crossed(全仓), isolated(逐仓)
     margin_size: float  # 保证金
     leverage: PositiveInt  # 杠杆倍数
     pos_mode: Literal["one_way_mode", "hedge_mode"]  # 持仓模式(单向, 双向)
     open_price_avg: float  # 平均开仓价
     mark_price: float  # 标记价格
-    unrealized_pl: float = Field(..., validation_alias="unrealizedPL")  # 未实现盈亏
+    unrealized_pl: float = Field(
+        ..., validation_alias="unrealizedPL"
+    )  # 未实现盈亏
     take_profit_id: str  # 止盈订单id
     stop_loss_id: str  # 止损订单id
 
@@ -50,48 +56,51 @@ class Position(ToCamelModel):
             sign = -1
         else:
             sign = 1
-        k = sign * (1 - (self.mark_price / self.open_price_avg)) * self.leverage * 100
+        k = (
+            sign
+            * (1 - (self.mark_price / self.open_price_avg))
+            * self.leverage
+            * 100
+        )
 
-        return (f"Position("
-                f"币种={self.symbol}({self.leverage}x), "
-                f"持仓方向={self.hold_side}, "
-                f"保证金={round(self.margin_size, 4)}, "
-                f"未实现盈亏={self.unrealized_pl}, "
-                f"回报率={round(k, 2)}%"
-                f")")
+        return (
+            f"Position("
+            f"币种={self.symbol}({self.leverage}x), "
+            f"持仓方向={self.hold_side}, "
+            f"保证金={round(self.margin_size, 4)}, "
+            f"未实现盈亏={self.unrealized_pl}, "
+            f"回报率={round(k, 2)}%"
+            f")"
+        )
 
     __str__ = as_zh_str
 
     __repr__ = as_zh_str
 
 
-class KLineProtocol(BaseModel):
-    highest_price: float
-
-    lowest_price: float
-
-
-class KLine(KLineProtocol):
+class KLine(BaseModel):
     opening_time: datetime.datetime  # 开盘时间
     opening_price: float  # 开盘价格
     closing_price: float  # 收盘价(当前K线未结束的及为最新价)
+    highest_price: float
+    lowest_price: float
     volume: float  # 成交量
 
     model_config = ConfigDict(
-        json_encoders={
-            datetime.datetime: utils.format_datetime
-        }
+        json_encoders={datetime.datetime: utils.format_datetime}
     )
 
     @classmethod
     def from_ccxt(cls, kline: list):
         return cls(
-            opening_time=datetime.datetime.fromtimestamp(int(int(kline[0]) / 1000)),
+            opening_time=datetime.datetime.fromtimestamp(
+                int(int(kline[0]) / 1000)
+            ),
             opening_price=kline[1],
             highest_price=kline[2],
             lowest_price=kline[3],
             closing_price=kline[4],
-            volume=kline[5]
+            volume=kline[5],
         )
 
     @property
@@ -113,13 +122,13 @@ class KLine(KLineProtocol):
     @property
     def side(self) -> PositionSide:
         if self.opening_price >= self.closing_price:
-            return 'long'
-        return 'short'
+            return "long"
+        return "short"
 
     def get_undulate(self, side: PositionSide | None = None):
         """获取k线方向的振幅"""
         side = side or self.side
-        if side == 'long':
+        if side == "long":
             return utils.get_undulate(self.lowest_price, self.highest_price)
         return utils.get_undulate(self.highest_price, self.lowest_price)
 
@@ -143,6 +152,49 @@ class KLine(KLineProtocol):
     __repr__ = as_str_zh
 
 
+class Direction(StrEnum):
+    """方向. 向上或者向下"""
+
+    up = "up"
+    down = "down"
+
+
+class MergedKline(BaseModel):
+    direction: Direction  # 合并的方向
+    klines: list[KLine]
+
+    @property
+    def volume(self) -> float:
+        return sum(kline.volume for kline in self.klines)
+
+    @property
+    def opening_time(self) -> datetime.datetime:
+        return self.klines[0].opening_time
+
+    @property
+    def highest_price_kline(self):
+        if self.direction == Direction.up:
+            return max(self.klines, key=lambda x: x.highest_price)
+        return min(self.klines, key=lambda x: x.highest_price)
+
+    @property
+    def highest_price(self) -> float:
+        return self.highest_price_kline.highest_price
+
+    @property
+    def lowest_price_kline(self):
+        if self.direction == Direction.up:
+            return max(self.klines, key=lambda x: x.lowest_price)
+        return min(self.klines, key=lambda x: x.lowest_price)
+
+    @property
+    def lowest_price(self) -> float:
+        return self.lowest_price_kline.lowest_price
+
+
+type GenericKline = MergedKline | KLine
+
+
 class BaseOrderBlock(BaseModel):
     side: PositionSide
 
@@ -152,9 +204,7 @@ class OrderBlock(BaseOrderBlock):
     first_test_kline: KLine | None = None
 
     model_config = ConfigDict(
-        json_encoders={
-            datetime.datetime: utils.format_datetime
-        }
+        json_encoders={datetime.datetime: utils.format_datetime}
     )
 
     def __str__(self):
@@ -170,7 +220,7 @@ class OrderBlock(BaseOrderBlock):
         start, end = 0, len(klines)
         while start <= end - 3:
             k1, k3 = klines[start], klines[start + 2]
-            if self.side == 'long':
+            if self.side == "long":
                 fvg = k3.lowest_price - k1.highest_price
             else:
                 fvg = k1.lowest_price - k3.highest_price

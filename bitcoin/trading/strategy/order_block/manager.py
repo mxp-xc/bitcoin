@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from ccxt.pro import Exchange
 from loguru import logger
 
-from .base import RunnerOption, CustomRunnerOptions, Runner
+from .base import CustomRunnerOptions, Runner, RunnerOption
 
 if TYPE_CHECKING:
     # for dev
@@ -17,7 +17,7 @@ class RunnerManager(object):
         self,
         options: list[RunnerOption],
         exchange: Exchange,
-        product_type: str
+        product_type: str,
     ):
         assert len({option.symbol for option in options}) == len(options)
         self.product_type = product_type
@@ -40,15 +40,14 @@ class RunnerManager(object):
             break_even_strategy=option.break_even_strategy,
             min_order_block_kline_undulate_percent=option.min_order_block_kline_undulate_percent,
             max_order_block_kline_undulate_percent=option.max_order_block_kline_undulate_percent,
-            **(option.init_kwargs or {})
+            **(option.init_kwargs or {}),
         )
 
     async def _get_account_info(self):
         logger.info(f"获取合约账号信息({self.product_type})")
-        balances = await self.exchange.fetch_balance({
-            "type": "swap",
-            "productType": self.product_type
-        })
+        balances = await self.exchange.fetch_balance(
+            {"type": "swap", "productType": self.product_type}
+        )
         if self.product_type.startswith("S"):
             balance = balances["SUSDT"]
         else:
