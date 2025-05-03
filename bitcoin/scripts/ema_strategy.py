@@ -154,7 +154,7 @@ async def entry():
             "PEPE/USDT:USDT",
         ],
         timeframes=["1m"],
-        wx_key="05df5452-0975-4f6a-9e2b-1e47d75470eb",
+        wx_key=None,
     )
     await manager.watch()
 
