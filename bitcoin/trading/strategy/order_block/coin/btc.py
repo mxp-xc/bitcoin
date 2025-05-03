@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from typing import TYPE_CHECKING
 
-from bitcoin.trading import utils
+from bitcoin import utils
 from bitcoin.trading.schema.base import OrderBlock
 
 from ..base import EntryRunner, OrderInfo, PlaceOrderContext

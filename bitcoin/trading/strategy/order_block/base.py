@@ -9,7 +9,7 @@ from ccxt.pro import Exchange
 from loguru import logger
 from pydantic import BaseModel
 
-from bitcoin.trading import utils
+from bitcoin import utils
 from bitcoin.trading.exceptions import StopTradingException
 from bitcoin.trading.helper import OrderBlockParser
 from bitcoin.trading.schema.base import KLine, OrderBlock

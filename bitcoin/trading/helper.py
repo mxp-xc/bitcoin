@@ -7,8 +7,8 @@ from ccxt.async_support import Exchange
 from loguru import logger
 from pydantic import BaseModel
 
+from bitcoin import utils
 from bitcoin.conf import settings
-from bitcoin.trading import utils
 from bitcoin.trading.schema.base import KLine, OrderBlock
 
 

@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from bitcoin.conf import settings
 from bitcoin.trading.helper import KLineWatcher
 from bitcoin.trading.schema.base import KLine
-from bitcoin.trading.utils import format_datetime, send_wx_message_or_log
+from bitcoin.utils import format_datetime, log_and_send_wx_message
 
 
 class HeatMap(BaseModel):
@@ -38,7 +38,7 @@ class HeatmapWatcher(object):
         self._stopping = False
 
     async def _run(self):
-        await send_wx_message_or_log(
+        await log_and_send_wx_message(
             f"start watch heatmap. threshold: {self.threshold}",
             key=self._wx_key,
         )
@@ -96,7 +96,7 @@ class HeatmapWatcher(object):
                     if key in seen:
                         # 已经告警过了
                         continue
-                    await send_wx_message_or_log(
+                    await log_and_send_wx_message(
                         f"{format_datetime(kline.opening_time)}"
                         f"在{price}出现穿透大额{get_side_desc(side)}: {size}.\n"
                         f"上一根k的挂单: {prev_heatmap.long[index][1]},\n"
@@ -125,7 +125,7 @@ class HeatmapWatcher(object):
                 break
         else:
             logger.warning(f"没有找到收线对应的heatmap: {kline}")
-            await send_wx_message_or_log(
+            await log_and_send_wx_message(
                 f"{kline_time}收线, 成交量: {kline.volume}", key=self._wx_key
             )
             return
@@ -152,12 +152,12 @@ class HeatmapWatcher(object):
             total_size += size
             messages.append(f"{price}{get_side_desc(side)} {size}")
         if not messages:
-            await send_wx_message_or_log(
+            await log_and_send_wx_message(
                 f"{kline_time}收线重新检测, 不存在穿透的大额挂单",
                 key=self._wx_key,
             )
             return
-        await send_wx_message_or_log(
+        await log_and_send_wx_message(
             f"{kline_time}收线重新检测. 存在穿透的大额挂单:\n"
             f"{'\n'.join(messages)}\n"
             f"总挂单额: {total_size}\n"
@@ -182,13 +182,13 @@ class HeatmapWatcher(object):
             try:
                 await self._run()
             except Exception as exc:
-                await send_wx_message_or_log(
+                await log_and_send_wx_message(
                     f"Failed to run heatmap: {exc!s}",
                     key=self._wx_key,
                     level="exception",
                 )
             finally:
-                await send_wx_message_or_log(
+                await log_and_send_wx_message(
                     "stop heatmap bot", key=self._wx_key
                 )
 
@@ -198,7 +198,7 @@ class HeatmapWatcher(object):
                 try:
                     return await self._get_heatmaps()
                 except Exception as exc:
-                    await send_wx_message_or_log(
+                    await log_and_send_wx_message(
                         f"Failed to get heatmap: {type(exc)}({exc!s}). wait 1min",
                         level="exception",
                         key=self._wx_key,

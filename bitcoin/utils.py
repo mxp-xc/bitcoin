@@ -61,7 +61,7 @@ async def send_wx_message(content, msg_type: str = "markdown", *, key: str):
                 )
 
 
-async def send_wx_message_or_log(
+async def log_and_send_wx_message(
     content,
     msg_type: str = "markdown",
     *,

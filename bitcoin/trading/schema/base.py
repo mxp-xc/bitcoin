@@ -7,7 +7,7 @@ from ccxt.base.types import PositionSide
 from pydantic import AliasGenerator, BaseModel, ConfigDict, Field, PositiveInt
 from pydantic.alias_generators import to_camel, to_snake
 
-from bitcoin.trading import utils
+from bitcoin import utils
 
 
 class ToCamelModel(BaseModel):
@@ -190,6 +190,12 @@ class MergedKline(BaseModel):
     @property
     def lowest_price(self) -> float:
         return self.lowest_price_kline.lowest_price
+
+    def __str__(self):
+        first, *_, last = self.klines
+        return f"MergedKline({first.opening_time} - {last.opening_time})"
+
+    __repr__ = __str__
 
 
 type GenericKline = MergedKline | KLine

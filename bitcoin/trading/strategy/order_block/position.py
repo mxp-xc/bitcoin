@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from typing import TYPE_CHECKING, Any, Literal, TypedDict
 
-from bitcoin.trading import utils
+from bitcoin import utils
 from bitcoin.trading.exceptions import StopTradingException
 
 from .schema import OrderInfo

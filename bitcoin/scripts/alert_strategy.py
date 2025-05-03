@@ -9,7 +9,7 @@ from talipp.indicators import RSI
 from bitcoin.conf import settings
 from bitcoin.trading.helper import KLineWatcher
 from bitcoin.trading.schema.base import KLine
-from bitcoin.trading.utils import send_wx_message
+from bitcoin.utils import send_wx_message
 
 
 class RSIStatus(StrEnum):

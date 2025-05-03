@@ -13,8 +13,8 @@ import orjson
 from loguru import logger
 from pydantic import BaseModel, ConfigDict
 
+from bitcoin import utils
 from bitcoin.conf import settings  # noqa
-from bitcoin.trading import utils
 
 
 class OrderBookData(BaseModel):
