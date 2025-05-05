@@ -163,7 +163,7 @@ class Tester(object):
         fee = self.fee_rate * order_cont
         logger.info(
             f"======== backtesting result ("
-            f"手续费: {self.fee_rate}, "
+            f"手续费: {self.fee_rate}%, "
             f"工作日盈利: {self.profit * 100}%, "
             f"周末盈利: {self.weekday_profit * 100}%"
             f")========"
