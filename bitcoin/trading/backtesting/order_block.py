@@ -173,6 +173,10 @@ class Tester(object):
         )
         order_cont = len(self._loss_orders) + len(self._surplus_orders)
         fee = self.fee_rate * order_cont
+        maybe_profit1 = surplus_rate - (loss_rate + unknown_loss_rate + fee)
+        maybe_profit2 = (surplus_rate + unknown_surplus_rate) - (
+            loss_rate + fee
+        )
         logger.info(
             f"======== backtesting result ("
             f"手续费: {self.fee_rate}%, "
@@ -187,25 +191,24 @@ class Tester(object):
             f"无法分辨: {len(self._unknown_orders)}, "
             f"(-{unknown_loss_rate}% - {unknown_surplus_rate}%)"
         )
-        maybe_profit1 = surplus_rate - (loss_rate + unknown_loss_rate + fee)
-        maybe_profit2 = (surplus_rate + unknown_surplus_rate) - (
-            loss_rate + fee
-        )
+        logger.info(f"持仓中 {len(self._opened_orders)}")
         logger.info(f"总收益率: ({maybe_profit1}% - {maybe_profit2}%)")
-        logger.info(f"持仓: {len(self._opened_orders)}")
         if self.file:
             with open(self.file, "w", encoding="utf-8") as fp:
                 data = {
                     "time": utils.format_datetime(datetime.datetime.now()),
-                    "fee": fee,
-                    "fee_rat": self.fee_rate,
                     "symbol": self.symbol,
                     "timeframe": self.timeframe,
-                    "profit": self.profit,
-                    "weekday_profit": self.weekday_profit,
                     "product_type": self.product_type,
-                    "loss_rate": loss_rate,
-                    "surplus_rate": surplus_rate,
+                    "fee": f"{fee}%",
+                    "fee_rate": f"{self.fee_rate}%",
+                    "profit": f"{self.profit * 100}%",
+                    "weekday_profit": f"{self.weekday_profit * 100}%",
+                    "loss_rate": f"-{loss_rate}%",
+                    "surplus_rate": f"+{surplus_rate}%",
+                    "unknown_loss_rate": f"-{unknown_loss_rate}%",
+                    "unknown_surplus_rate": f"+{unknown_surplus_rate}%",
+                    "total_profit_rate": f"{maybe_profit1}% - {maybe_profit2}%",
                     "orders": {
                         "stop_loss": [
                             order.desc_json() for order in self._loss_orders
@@ -221,7 +224,7 @@ class Tester(object):
                         ],
                     },
                 }
-                json.dump(data, fp)
+                json.dump(data, fp, ensure_ascii=False)
                 logger.info(
                     f"save backtesting detail at {self.file.absolute()}"
                 )
@@ -288,7 +291,7 @@ if __name__ == "__main__":
     backtesting_path = settings.project_path / "backtesting"
     backtesting_path.mkdir(exist_ok=True)
     tester = Tester(
-        "ETH/USDT:USDT",
+        "BTC/USDT:USDT",
         timeframe="30m",
         product_type="USDT-FUTURES",
         profit=0.01,
