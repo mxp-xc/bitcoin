@@ -112,6 +112,7 @@ class Tester(object):
         profit: float,
         weekday_profit: float | None = None,
         fee_rate: float = 0.08,
+        start_time: str = None,
         file: Path | None = None,
     ):
         self.symbol = symbol
@@ -122,6 +123,7 @@ class Tester(object):
         self.profit = profit
         self.weekday_profit = weekday_profit or profit
         self.fee_rate = fee_rate
+        self.start_time = start_time
         # 持仓中的订单块订单
         self._opened_orders: list[OrderItem] = []
         self._loss_orders: list[OrderItem] = []
@@ -133,7 +135,7 @@ class Tester(object):
             "binance"
         ) as self.exchange:
             start = datetime.datetime.strptime(
-                "2024-05-05 08:00:00", "%Y-%m-%d %H:%M:%S"
+                self.start_time, "%Y-%m-%d %H:%M:%S"
             )
             klines = [
                 KLine.from_ccxt(ohlcv)
@@ -159,6 +161,12 @@ class Tester(object):
         surplus_rate = sum(
             order.stop_surplus_rate for order in self._surplus_orders
         )
+        unknown_loss_rate = sum(
+            order.stop_loss_rate for order in self._unknown_orders
+        )
+        unknown_surplus_rate = sum(
+            order.stop_surplus_rate for order in self._unknown_orders
+        )
         order_cont = len(self._loss_orders) + len(self._surplus_orders)
         fee = self.fee_rate * order_cont
         logger.info(
@@ -171,7 +179,13 @@ class Tester(object):
         logger.info(f"{order_cont}单手续费: {fee}%")
         logger.info(f"止损: {len(self._loss_orders)}, 共{loss_rate}%")
         logger.info(f"止盈: {len(self._surplus_orders)}, 共{surplus_rate}%")
-        logger.info(f"无法分辨: {len(self._unknown_orders)}")
+        logger.info(
+            f"无法分辨: {len(self._unknown_orders)}, "
+            f"(-{unknown_loss_rate}% - {unknown_surplus_rate}%)"
+        )
+        maybe_profit1 = surplus_rate - (loss_rate + unknown_loss_rate)
+        maybe_profit2 = (surplus_rate + unknown_surplus_rate) - loss_rate
+        logger.info(f"总收益率: ({maybe_profit1}% - {maybe_profit2}%)")
         logger.info(f"持仓: {len(self._opened_orders)}")
         if self.file:
             with open(self.file, "w", encoding="utf-8") as fp:
@@ -263,11 +277,12 @@ if __name__ == "__main__":
     backtesting_path = settings.project_path / "backtesting"
     backtesting_path.mkdir(exist_ok=True)
     tester = Tester(
-        "FIL/USDT:USDT",
+        "BTC/USDT:USDT",
         timeframe="30m",
         product_type="USDT-FUTURES",
-        profit=0.02,
+        profit=0.01,
         weekday_profit=0.005,
+        start_time="2024-04-05 08:00:00",  # 回测开始时间
         file=backtesting_path / "fil_2_05.json",
     )
     asyncio.run(tester.run())
