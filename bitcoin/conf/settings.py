@@ -114,7 +114,10 @@ settings._config_logger()  # noqa
 
 
 def __log_settings():
-    settings.api_info  # noqa: for dev
+    try:
+        settings.api_info  # noqa: for dev
+    except ImportError:
+        logger.warning("default _settings not found")
     proxy = settings.get_proxy_http_base_url()
     if proxy:
         logger.info(f"使用代理: {proxy}")

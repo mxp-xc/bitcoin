@@ -503,7 +503,7 @@ class Runner(object):
                 )
 
             undulate = order_block_kline.get_undulate_percent(
-                side=order_block.side  # noqa
+                side=order_block.side
             )
             if (
                 undulate < self.min_order_block_kline_undulate_percent
