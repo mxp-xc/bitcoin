@@ -18,8 +18,11 @@ from bitcoin.trading.schema.base import KLine, OrderBlock
 class TriggerType(StrEnum):
     loss = "loss"  # 触发止损
     surplus = "surplus"  # 触发止盈
+    # 无法判断止盈止损
+    unknown = "unknown"
+    # 等待确认是否止盈
+    unknown_wait_confirm = "unknown_wait_confirm"
     none = "none"  # 没有触发止盈止损
-    unknown = "unknown"  # 无法分辨触发了止盈还是止损(一根k同时触发止盈和止损)
 
 
 class OrderItem(BaseModel):
@@ -28,12 +31,21 @@ class OrderItem(BaseModel):
     entry_price: float  # 入场价格
     stop_loss_price: float  # 止损价格
     stop_surplus_price: float  # 止盈价格
+    trigger_type: TriggerType = TriggerType.none
+    trigger_kline: KLine | None = None  # 触发止盈或者止损的k线
 
-    def desc_json(self):
+    def model_dump_for_report(self):
+        if self.trigger_kline:
+            trigger_time = utils.format_datetime(
+                self.trigger_kline.opening_time
+            )
+        else:
+            trigger_time = None
         return {
             "time": utils.format_datetime(
                 self.order_block.order_block_kline.opening_time
             ),
+            "trigger_time": trigger_time,
             "side": self.order_block.side,
             "entry_price": self.entry_price,
             "stop_loss_price": self.stop_loss_price,
@@ -83,27 +95,36 @@ class OrderItem(BaseModel):
     def trigger(self, kline: KLine) -> TriggerType:
         hit_surplus = False
         hit_loss = False
-
-        if self.order_block.side == "long":
+        side = self.order_block.side
+        if side == "long":
             hit_surplus = kline.highest_price >= self.stop_surplus_price
             hit_loss = kline.lowest_price <= self.stop_loss_price
-        elif self.order_block.side == "short":
+        elif side == "short":
             hit_surplus = kline.lowest_price <= self.stop_surplus_price
             hit_loss = kline.highest_price >= self.stop_loss_price
 
         if hit_surplus and hit_loss:
             return TriggerType.unknown
         elif hit_surplus:
+            if kline.opening_time == self.entry_kline.opening_time:
+                # 入场k就触发了止盈, 这种不可以保证一定是止盈
+                if (
+                    side == "long"
+                    and kline.closing_price >= self.stop_surplus_price
+                ) or (
+                    side == "short"
+                    and kline.closing_price <= self.stop_surplus_price
+                ):
+                    # 如果收盘价格是止盈, 那么一定是止盈的
+                    return TriggerType.surplus
+                return TriggerType.unknown_wait_confirm
             return TriggerType.surplus
         elif hit_loss:
+            if self.trigger_type == TriggerType.unknown_wait_confirm:
+                return TriggerType.unknown
             return TriggerType.loss
         else:
             return TriggerType.none
-
-
-class OrderManager(object):
-    def __init__(self):
-        pass
 
 
 class Tester(object):
@@ -133,6 +154,8 @@ class Tester(object):
         self._opened_orders: list[OrderItem] = []
         self._loss_orders: list[OrderItem] = []
         self._surplus_orders: list[OrderItem] = []
+
+        # 入场就触发了止盈, 而且收盘价不是止盈, 并且后续没触发止损的订单.
         self._unknown_orders: list[OrderItem] = []
 
     async def run(self):
@@ -149,14 +172,14 @@ class Tester(object):
                     self.timeframe,
                     since=int(start.timestamp() * 1000),
                     params={
-                        # "until": int(datetime.datetime.now().timestamp() * 1000),
                         "paginate": True,
                         "paginationCalls": 20,
                     },
                 )
             ]
             logger.info(
-                f"backtesting {self.symbol}-{self.timeframe}: {klines[0].opening_time} - {klines[-1].opening_time}"
+                f"backtesting {self.symbol}-{self.timeframe}: "
+                f"{klines[0].opening_time} - {klines[-1].opening_time}"
             )
             await self.resolve(klines)
             await self.report()
@@ -166,11 +189,12 @@ class Tester(object):
         surplus_rate = sum(
             order.stop_surplus_rate for order in self._surplus_orders
         )
+        not_confirm_orders = self._unknown_orders
         unknown_loss_rate = sum(
-            order.stop_loss_rate for order in self._unknown_orders
+            order.stop_loss_rate for order in not_confirm_orders
         )
         unknown_surplus_rate = sum(
-            order.stop_surplus_rate for order in self._unknown_orders
+            order.stop_surplus_rate for order in not_confirm_orders
         )
         order_cont = len(self._loss_orders) + len(self._surplus_orders)
         fee = self.fee_rate * order_cont
@@ -189,7 +213,7 @@ class Tester(object):
         logger.info(f"止损: {len(self._loss_orders)}, 共{loss_rate}%")
         logger.info(f"止盈: {len(self._surplus_orders)}, 共{surplus_rate}%")
         logger.info(
-            f"无法分辨: {len(self._unknown_orders)}, "
+            f"无法分辨: {len(not_confirm_orders)}, "
             f"(-{unknown_loss_rate}% - {unknown_surplus_rate}%)"
         )
         logger.info(f"持仓中 {len(self._opened_orders)}")
@@ -212,16 +236,20 @@ class Tester(object):
                     "total_profit_rate": f"{maybe_profit1}% - {maybe_profit2}%",
                     "orders": {
                         "stop_loss": [
-                            order.desc_json() for order in self._loss_orders
+                            order.model_dump_for_report()
+                            for order in self._loss_orders
                         ],
                         "stop_surplus": [
-                            order.desc_json() for order in self._surplus_orders
+                            order.model_dump_for_report()
+                            for order in self._surplus_orders
                         ],
                         "unknown": [
-                            order.desc_json() for order in self._unknown_orders
+                            order.model_dump_for_report()
+                            for order in self._unknown_orders
                         ],
                         "open": [
-                            order.desc_json() for order in self._opened_orders
+                            order.model_dump_for_report()
+                            for order in self._opened_orders
                         ],
                     },
                 }
@@ -245,6 +273,10 @@ class Tester(object):
                         self._open_order(order_block, kline)
             finally:
                 self._process_sl_or_tp(kline)
+        await self.resolve_unknown_orders()
+
+    async def resolve_unknown_orders(self):
+        pass
 
     def _open_order(self, order_block: OrderBlock, test_kline: KLine):
         if order_block.side not in self.sides:
@@ -275,25 +307,21 @@ class Tester(object):
     def _process_sl_or_tp(self, kline: KLine):
         remaining_open_orders: list[OrderItem] = []
         for item in self._opened_orders:
-            is_current_kline = (
-                item.entry_kline.opening_time == kline.opening_time
-            )
             trigger_type = item.trigger(kline)
+            item.trigger_type = trigger_type
             match trigger_type:
                 case TriggerType.loss:
                     self._loss_orders.append(item)
                 case TriggerType.surplus:
-                    # 当前k打止盈的暂时不可以算
-                    if not is_current_kline:
-                        self._surplus_orders.append(item)
-                    else:
-                        self._unknown_orders.append(item)
+                    self._surplus_orders.append(item)
                 case TriggerType.unknown:
                     self._unknown_orders.append(item)
-                case TriggerType.none:
+                case TriggerType.none | TriggerType.unknown_wait_confirm:
                     remaining_open_orders.append(item)
                 case _:
-                    raise RuntimeError(f"unknown item {trigger_type}")
+                    raise RuntimeError(f"unknown trigger_type {trigger_type}")
+            if trigger_type not in (TriggerType.none, TriggerType.unknown):
+                item.trigger_kline = kline
         self._opened_orders = remaining_open_orders
 
 
@@ -307,7 +335,7 @@ if __name__ == "__main__":
         profit=0.01,
         weekday_profit=0.005,
         sides=["long", "short"],  # 方向
-        start_time="2024-04-23 08:00:00",  # 回测开始时间
+        start_time="2025-01-01 08:00:00",  # 回测开始时间
         file=backtesting_path / "fil_2_05.json",
     )
     asyncio.run(tester.run())
