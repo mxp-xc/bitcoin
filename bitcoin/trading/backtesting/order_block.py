@@ -24,6 +24,7 @@ class TriggerType(StrEnum):
 
 class OrderItem(BaseModel):
     order_block: OrderBlock
+    entry_kline: KLine  # 入场k
     entry_price: float  # 入场价格
     stop_loss_price: float  # 止损价格
     stop_surplus_price: float  # 止盈价格
@@ -256,6 +257,7 @@ class Tester(object):
         if order_block.side == "long":
             order_item = OrderItem(
                 order_block=order_block,
+                entry_kline=test_kline,
                 entry_price=kline.highest_price,
                 stop_loss_price=kline.lowest_price,
                 stop_surplus_price=kline.highest_price * (1 + profit_rate),
@@ -263,6 +265,7 @@ class Tester(object):
         else:
             order_item = OrderItem(
                 order_block=order_block,
+                entry_kline=test_kline,
                 entry_price=kline.lowest_price,
                 stop_loss_price=kline.highest_price,
                 stop_surplus_price=kline.lowest_price * (1 - profit_rate),
@@ -272,12 +275,19 @@ class Tester(object):
     def _process_sl_or_tp(self, kline: KLine):
         remaining_open_orders: list[OrderItem] = []
         for item in self._opened_orders:
+            is_current_kline = (
+                item.entry_kline.opening_time == kline.opening_time
+            )
             trigger_type = item.trigger(kline)
             match trigger_type:
                 case TriggerType.loss:
                     self._loss_orders.append(item)
                 case TriggerType.surplus:
-                    self._surplus_orders.append(item)
+                    # 当前k打止盈的暂时不可以算
+                    if not is_current_kline:
+                        self._surplus_orders.append(item)
+                    else:
+                        self._unknown_orders.append(item)
                 case TriggerType.unknown:
                     self._unknown_orders.append(item)
                 case TriggerType.none:
@@ -297,7 +307,7 @@ if __name__ == "__main__":
         profit=0.01,
         weekday_profit=0.005,
         sides=["long", "short"],  # 方向
-        start_time="2025-04-23 08:00:00",  # 回测开始时间
+        start_time="2024-04-23 08:00:00",  # 回测开始时间
         file=backtesting_path / "fil_2_05.json",
     )
     asyncio.run(tester.run())
