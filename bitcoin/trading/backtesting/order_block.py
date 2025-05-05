@@ -183,8 +183,10 @@ class Tester(object):
             f"无法分辨: {len(self._unknown_orders)}, "
             f"(-{unknown_loss_rate}% - {unknown_surplus_rate}%)"
         )
-        maybe_profit1 = surplus_rate - (loss_rate + unknown_loss_rate)
-        maybe_profit2 = (surplus_rate + unknown_surplus_rate) - loss_rate
+        maybe_profit1 = surplus_rate - (loss_rate + unknown_loss_rate + fee)
+        maybe_profit2 = (surplus_rate + unknown_surplus_rate) - (
+            loss_rate + fee
+        )
         logger.info(f"总收益率: ({maybe_profit1}% - {maybe_profit2}%)")
         logger.info(f"持仓: {len(self._opened_orders)}")
         if self.file:
@@ -277,7 +279,7 @@ if __name__ == "__main__":
     backtesting_path = settings.project_path / "backtesting"
     backtesting_path.mkdir(exist_ok=True)
     tester = Tester(
-        "BTC/USDT:USDT",
+        "ETH/USDT:USDT",
         timeframe="30m",
         product_type="USDT-FUTURES",
         profit=0.01,
