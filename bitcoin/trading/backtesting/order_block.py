@@ -5,6 +5,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from ccxt.async_support import Exchange
+from ccxt.base.types import PositionSide
 from loguru import logger
 from pydantic import BaseModel, model_validator
 
@@ -32,6 +33,7 @@ class OrderItem(BaseModel):
             "time": utils.format_datetime(
                 self.order_block.order_block_kline.opening_time
             ),
+            "side": self.order_block.side,
             "entry_price": self.entry_price,
             "stop_loss_price": self.stop_loss_price,
             "stop_surplus_price": self.stop_surplus_price,
@@ -110,6 +112,7 @@ class Tester(object):
         timeframe: str,
         product_type: str,
         profit: float,
+        sides: list[PositionSide] = ("long", "short"),
         weekday_profit: float | None = None,
         fee_rate: float = 0.08,
         start_time: str = None,
@@ -124,6 +127,7 @@ class Tester(object):
         self.weekday_profit = weekday_profit or profit
         self.fee_rate = fee_rate
         self.start_time = start_time
+        self.sides = tuple(set(sides or ()))
         # 持仓中的订单块订单
         self._opened_orders: list[OrderItem] = []
         self._loss_orders: list[OrderItem] = []
@@ -218,6 +222,9 @@ class Tester(object):
                     },
                 }
                 json.dump(data, fp)
+                logger.info(
+                    f"save backtesting detail at {self.file.absolute()}"
+                )
 
     async def resolve(self, klines: list[KLine]):
         order_block_parser = OrderBlockParser(timeframe=self.timeframe)
@@ -236,6 +243,8 @@ class Tester(object):
                 self._process_sl_or_tp(kline)
 
     def _open_order(self, order_block: OrderBlock, test_kline: KLine):
+        if order_block.side not in self.sides:
+            return
         kline = order_block.order_block_kline
         if utils.is_workday(test_kline.opening_time):
             profit_rate = self.profit
@@ -284,7 +293,8 @@ if __name__ == "__main__":
         product_type="USDT-FUTURES",
         profit=0.01,
         weekday_profit=0.005,
-        start_time="2024-04-05 08:00:00",  # 回测开始时间
+        sides=["long", "short"],  # 方向
+        start_time="2025-04-23 08:00:00",  # 回测开始时间
         file=backtesting_path / "fil_2_05.json",
     )
     asyncio.run(tester.run())
