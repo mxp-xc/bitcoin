@@ -10,3 +10,4 @@ logs
 *nohup.out
 script_nohup
 .env
+/backtesting

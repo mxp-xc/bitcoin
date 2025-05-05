@@ -24,15 +24,19 @@ def is_workday(dt: datetime.datetime | None = None):
     工作日的范围是周一8点到周六的8点
     """
     # 策略修改, 统一按工作日来计算
-    return True
-    # dt = dt or datetime.datetime.now()
-    # weekday = dt.weekday()
-    #
-    # # 周一8点
-    # left = (dt - datetime.timedelta(days=weekday)).replace(hour=8, minute=0, second=0, microsecond=0)
-    # # 周六8点
-    # right = (dt + datetime.timedelta(days=5 - weekday)).replace(hour=8, minute=0, second=0, microsecond=0)
-    # return left <= dt < right
+    # return True
+    dt = dt or datetime.datetime.now()
+    weekday = dt.weekday()
+
+    # 周一8点
+    left = (dt - datetime.timedelta(days=weekday)).replace(
+        hour=8, minute=0, second=0, microsecond=0
+    )
+    # 周六8点
+    right = (dt + datetime.timedelta(days=5 - weekday)).replace(
+        hour=8, minute=0, second=0, microsecond=0
+    )
+    return left <= dt < right
 
 
 async def send_wx_message(content, msg_type: str = "markdown", *, key: str):
