@@ -6,6 +6,7 @@ from ccxt.base.types import PositionSide
 from pydantic import BaseModel, ConfigDict
 
 from bitcoin import utils
+from bitcoin.conf import settings
 
 
 class KLine(BaseModel):
@@ -24,8 +25,8 @@ class KLine(BaseModel):
     def from_ccxt(cls, kline: list):
         return cls(
             opening_time=datetime.datetime.fromtimestamp(
-                int(int(kline[0]) / 1000)
-            ),
+                int(int(kline[0]) / 1000), datetime.UTC
+            ).astimezone(settings.zone_info),
             opening_price=kline[1],
             highest_price=kline[2],
             lowest_price=kline[3],

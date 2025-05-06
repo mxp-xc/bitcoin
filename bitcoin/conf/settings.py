@@ -3,6 +3,7 @@ import datetime
 import sys
 from functools import cached_property
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import ccxt as sync_ccxt
 from ccxt import pro as async_ccxt
@@ -23,6 +24,8 @@ _dot_env_path = _project_path / ".env"
 
 class _Settings(BaseSettings):
     project_path: Path = _project_path
+
+    zone_info: ZoneInfo = ZoneInfo("Asia/Shanghai")
 
     debug: bool = True
 
@@ -90,6 +93,9 @@ class _Settings(BaseSettings):
         return exchange
 
     def _config_logger(self):  # noqa
+        from bitcoin.conf.logger import configure_logging
+
+        configure_logging()
         script_file_name = Path(sys.modules["__main__"].__file__).stem
         start_time = datetime.datetime.now().strftime("%Y-%m-%d %H_%M_%S")
         log_file_path = str(

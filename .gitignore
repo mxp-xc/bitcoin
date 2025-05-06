@@ -11,3 +11,4 @@ logs
 script_nohup
 .env
 /backtesting
+/db
