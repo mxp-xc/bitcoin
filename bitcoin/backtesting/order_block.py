@@ -120,7 +120,7 @@ class Tester(object):
         self.fee_rate = fee_rate
         self.start = start
         self.until = until
-        timeframe_seconds = Exchange.parse_timeframe(timeframe) - 60
+        timeframe_seconds = Exchange.parse_timeframe(timeframe)
         assert timeframe_seconds > 60
         self._1m_delta = datetime.timedelta(seconds=timeframe_seconds - 60)
         self.sides = tuple(set(sides or ()))
@@ -375,7 +375,8 @@ class Tester(object):
     ) -> TriggerType:
         # 是否入场
         is_entry = False
-        for kline in self.get_kline_1m_detail(entry_kline.opening_time):
+        klines = self.get_kline_1m_detail(entry_kline.opening_time)
+        for kline in klines:
             first_entry = False
             if not is_entry:
                 is_entry = (
@@ -430,13 +431,13 @@ if __name__ == "__main__":
     backtesting_path = settings.project_path / "backtesting"
     backtesting_path.mkdir(exist_ok=True)
     tester = Tester(
-        "POPCAT/USDT:USDT",
+        "BTC/USDT:USDT",
         timeframe="30m",
         product_type="USDT-FUTURES",
-        profit=0.02,
-        weekday_profit=0.0075,
+        profit=1 / 100,
+        weekday_profit=0.5 / 100,
         sides=["long", "short"],  # 方向
-        start="2025-05-04 08:00:00",  # 回测开始时间
-        file=backtesting_path / "popcat_15_075.json",
+        start="2024-05-04 08:00:00",  # 回测开始时间
+        file=backtesting_path / "backtesting.json",
     )
     asyncio.run(tester.run())
