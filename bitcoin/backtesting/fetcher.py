@@ -54,9 +54,7 @@ class KLine1MFetcher(object):
         self.symbol = symbol
         assert product_type == "USDT-FUTURES"
         self.product_type = product_type
-        self.exchange = exchange or settings.create_async_exchange_public(
-            "binance"
-        )
+        self.exchange = exchange or settings.exchange.create_async_exchange_public("binance")
         self._delta = datetime.timedelta(minutes=1)
         self._offset = datetime.timedelta(minutes=30)
 
@@ -71,9 +69,7 @@ class KLine1MFetcher(object):
             until = now
         assert until > start
         logger.info(f"fetch klines ({start} - {until})")
-        current_klines_task = asyncio.create_task(
-            self._get_current_1m_klines()
-        )
+        current_klines_task = asyncio.create_task(self._get_current_1m_klines())
         logger.info("resolving exist klines in db")
         history_klines_in_db = await self._get_klines_from_db(start, until)
         logger.info(f"{len(history_klines_in_db) = }")
@@ -85,17 +81,12 @@ class KLine1MFetcher(object):
             left_klines = await self._fetch_klines_from_api_save_db(
                 start, first_history_kline.opening_time - self._delta
             )
-            assert (
-                first_history_kline.opening_time - left_klines[-1].opening_time
-            ) == self._delta
+            assert (first_history_kline.opening_time - left_klines[-1].opening_time) == self._delta
             result.extend(left_klines)
         result.extend(history_klines_in_db)
 
         last_history_kline = history_klines_in_db[-1]
-        if (
-            last_history_kline.opening_time < until
-            and until - last_history_kline.opening_time >= self._delta
-        ):
+        if last_history_kline.opening_time < until and until - last_history_kline.opening_time >= self._delta:
             # until多查一根1分钟k, 因为相同的话没有数据返回
 
             right_klines = await self._fetch_klines_from_api_save_db(
@@ -104,9 +95,7 @@ class KLine1MFetcher(object):
                 not_closed_kline=(await current_klines_task)[-1].opening_time,
             )
             result.extend(right_klines)
-            assert (
-                right_klines[0].opening_time - last_history_kline.opening_time
-            ) == self._delta
+            assert (right_klines[0].opening_time - last_history_kline.opening_time) == self._delta
         return result
 
     async def _fetch_klines_from_api_save_db(
@@ -129,15 +118,12 @@ class KLine1MFetcher(object):
             history_klines.append(history_kline)
         if history_klines:
             logger.info(
-                f"==== start save {self.symbol} 1m klines in db "
-                f"({start} - {until}) ({len(history_klines) = }) ======"
+                f"==== start save {self.symbol} 1m klines in db ({start} - {until}) ({len(history_klines) = }) ======"
             )
 
             for chunk in batched(history_klines, 2000):
                 await HistoryKLine.bulk_create(chunk)
-            logger.info(
-                f"==== save klines in db success ({start} - {until}) ===="
-            )
+            logger.info(f"==== save klines in db success ({start} - {until}) ====")
         return klines
 
     async def _fetch_klines_from_api(
@@ -145,9 +131,7 @@ class KLine1MFetcher(object):
         start: datetime.datetime,
         until: datetime.datetime,
     ):
-        logger.warning(
-            f"==== download {self.symbol} 1m klines ({start} - {until}) ======"
-        )
+        logger.warning(f"==== download {self.symbol} 1m klines ({start} - {until}) ======")
 
         klines = [
             KLine.from_ccxt(ohlcv)
@@ -167,14 +151,9 @@ class KLine1MFetcher(object):
         prev_kline: KLine | None = None
         for kline in klines:
             if prev_kline is not None:
-                assert (
-                    kline.opening_time - prev_kline.opening_time == self._delta
-                )
+                assert kline.opening_time - prev_kline.opening_time == self._delta
             prev_kline = kline
-        logger.info(
-            f"==== fetch {self.symbol} {len(klines) = } 1m klines "
-            f"({start} - {until}) ====="
-        )
+        logger.info(f"==== fetch {self.symbol} {len(klines) = } 1m klines ({start} - {until}) =====")
         return klines
 
     async def _get_current_1m_klines(self) -> list[KLine]:
@@ -201,10 +180,7 @@ class KLine1MFetcher(object):
             history_kline = cast(HistoryKLine, history_kline)
             result.append(history_kline)
             if prev_history_kline is not None:
-                is_valid = (
-                    history_kline.opening_time
-                    - prev_history_kline.opening_time
-                ) == self._delta
+                is_valid = (history_kline.opening_time - prev_history_kline.opening_time) == self._delta
                 if not is_valid:
                     raise RuntimeError
             prev_history_kline = history_kline
@@ -215,9 +191,7 @@ async def main():
     await init_db()
     fetcher = KLine1MFetcher(symbol="BTC/USDT:USDT")
     klines = await fetcher.fetch_klines(
-        datetime.datetime.strptime(
-            "2025-05-07 00:30:00", "%Y-%m-%d %H:%M:%S"
-        ).replace(tzinfo=settings.zone_info),
+        datetime.datetime.strptime("2025-05-07 00:30:00", "%Y-%m-%d %H:%M:%S").replace(tzinfo=settings.zone_info),
     )
     logger.info("load df")
     df = pd.DataFrame(
@@ -228,9 +202,7 @@ async def main():
     df.sort_index(inplace=True)
 
     logger.info("start search klines")
-    start = datetime.datetime.strptime(
-        "2025-05-07 02:30:00", "%Y-%m-%d %H:%M:%S"
-    ).replace(tzinfo=settings.zone_info)
+    start = datetime.datetime.strptime("2025-05-07 02:30:00", "%Y-%m-%d %H:%M:%S").replace(tzinfo=settings.zone_info)
     end = datetime.datetime.now(tz=settings.zone_info)
     for kline in df[start:end]["value"]:
         print(kline.opening_time)

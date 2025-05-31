@@ -38,15 +38,11 @@ class OrderItem(BaseModel):
 
     def model_dump_for_report(self):
         if self.trigger_kline:
-            trigger_time = utils.format_datetime(
-                self.trigger_kline.opening_time
-            )
+            trigger_time = utils.format_datetime(self.trigger_kline.opening_time)
         else:
             trigger_time = None
         return {
-            "time": utils.format_datetime(
-                self.order_block.order_block_kline.opening_time
-            ),
+            "time": utils.format_datetime(self.order_block.order_block_kline.opening_time),
             "trigger_time": trigger_time,
             "side": self.order_block.side,
             "entry_price": self.entry_price,
@@ -58,35 +54,23 @@ class OrderItem(BaseModel):
 
     @property
     def stop_loss_rate(self) -> float:
-        return utils.get_undulate_percent(
-            self.entry_price, self.stop_loss_price
-        )
+        return utils.get_undulate_percent(self.entry_price, self.stop_loss_price)
 
     @property
     def stop_surplus_rate(self) -> float:
-        return utils.get_undulate_percent(
-            self.entry_price, self.stop_surplus_price
-        )
+        return utils.get_undulate_percent(self.entry_price, self.stop_surplus_price)
 
     @model_validator(mode="after")
     def validate_price(self):
         if self.order_block.side == "long":
-            if not (
-                self.stop_loss_price
-                <= self.entry_price
-                <= self.stop_surplus_price
-            ):
+            if not (self.stop_loss_price <= self.entry_price <= self.stop_surplus_price):
                 raise ValueError(
                     f"Invalid prices for LONG: SL({self.stop_loss_price}) "
                     f"<= Entry({self.entry_price}) "
                     f"<= TP({self.stop_surplus_price}) condition not met."
                 )
         elif self.order_block.side == "short":
-            if not (
-                self.stop_surplus_price
-                <= self.entry_price
-                <= self.stop_loss_price
-            ):
+            if not (self.stop_surplus_price <= self.entry_price <= self.stop_loss_price):
                 raise ValueError(
                     f"Invalid prices for SHORT: TP({self.stop_surplus_price}) "
                     f"<= Entry({self.entry_price}) "
@@ -134,38 +118,23 @@ class Tester(object):
 
         self._df: pd.DataFrame | None = None
 
-    async def _load_1m_df(
-        self, start: datetime.datetime, until: datetime.datetime
-    ):
+    async def _load_1m_df(self, start: datetime.datetime, until: datetime.datetime):
         assert self._fetcher_1m
         klines = await self._fetcher_1m.fetch_klines(start, until)
-        df = pd.DataFrame(
-            tuple(
-                {"time": kline.opening_time, "kline": kline}
-                for kline in klines
-            )
-        )
+        df = pd.DataFrame(tuple({"time": kline.opening_time, "kline": kline} for kline in klines))
         df.set_index("time", inplace=True)
         df.sort_index(inplace=True)
         self._df = df
 
     async def run(self):
         await init_db()
-        async with settings.create_async_exchange_public(
-            "binance"
-        ) as self.exchange:
-            self._fetcher_1m = KLine1MFetcher(
-                symbol=self.symbol, exchange=self.exchange
-            )
-            start = datetime.datetime.strptime(
-                self.start, "%Y-%m-%d %H:%M:%S"
-            ).astimezone(settings.zone_info)
+        async with settings.exchange.create_async_exchange_public("binance") as self.exchange:
+            self._fetcher_1m = KLine1MFetcher(symbol=self.symbol, exchange=self.exchange)
+            start = datetime.datetime.strptime(self.start, "%Y-%m-%d %H:%M:%S").astimezone(settings.zone_info)
             if not self.until:
                 until = datetime.datetime.now(tz=settings.zone_info)
             else:
-                until = datetime.datetime.strptime(
-                    self.until, "%Y-%m-%d %H:%M:%S"
-                ).astimezone(settings.zone_info)
+                until = datetime.datetime.strptime(self.until, "%Y-%m-%d %H:%M:%S").astimezone(settings.zone_info)
 
             load_df_fut = asyncio.create_task(self._load_1m_df(start, until))
             klines = [
@@ -183,8 +152,7 @@ class Tester(object):
             ]
             await load_df_fut
             logger.info(
-                f"backtesting {self.symbol}-{self.timeframe}: "
-                f"{klines[0].opening_time} - {klines[-1].opening_time}"
+                f"backtesting {self.symbol}-{self.timeframe}: {klines[0].opening_time} - {klines[-1].opening_time}"
             )
             await self.resolve(klines)
             await self.report()
@@ -193,32 +161,20 @@ class Tester(object):
 
         await Tortoise.close_connections()
 
-    def get_kline_1m_detail(
-        self, opening_time: datetime.datetime
-    ) -> list[KLine]:
+    def get_kline_1m_detail(self, opening_time: datetime.datetime) -> list[KLine]:
         assert self._df is not None
-        result = list(
-            self._df[opening_time : opening_time + self._1m_delta]["kline"]
-        )
+        result = list(self._df[opening_time : opening_time + self._1m_delta]["kline"])
         return result
 
     async def report(self):
         loss_rate = sum(order.stop_loss_rate for order in self._loss_orders)
-        surplus_rate = sum(
-            order.stop_surplus_rate for order in self._surplus_orders
-        )
-        unknown_loss_rate = sum(
-            order.stop_loss_rate for order in self._unknown_orders
-        )
-        unknown_surplus_rate = sum(
-            order.stop_surplus_rate for order in self._unknown_orders
-        )
+        surplus_rate = sum(order.stop_surplus_rate for order in self._surplus_orders)
+        unknown_loss_rate = sum(order.stop_loss_rate for order in self._unknown_orders)
+        unknown_surplus_rate = sum(order.stop_surplus_rate for order in self._unknown_orders)
         order_cont = len(self._loss_orders) + len(self._surplus_orders)
         fee = self.fee_rate * order_cont
         maybe_profit1 = surplus_rate - (loss_rate + unknown_loss_rate + fee)
-        maybe_profit2 = (surplus_rate + unknown_surplus_rate) - (
-            loss_rate + fee
-        )
+        maybe_profit2 = (surplus_rate + unknown_surplus_rate) - (loss_rate + fee)
         logger.info(
             f"======== backtesting result ("
             f"手续费: {self.fee_rate}%, "
@@ -229,10 +185,7 @@ class Tester(object):
         logger.info(f"{order_cont}单手续费: {fee}%")
         logger.info(f"止损: {len(self._loss_orders)}, 共{loss_rate}%")
         logger.info(f"止盈: {len(self._surplus_orders)}, 共{surplus_rate}%")
-        logger.info(
-            f"无法分辨: {len(self._unknown_orders)}, "
-            f"(-{unknown_loss_rate}% - {unknown_surplus_rate}%)"
-        )
+        logger.info(f"无法分辨: {len(self._unknown_orders)}, (-{unknown_loss_rate}% - {unknown_surplus_rate}%)")
         logger.info(f"持仓中 {len(self._opened_orders)}")
         logger.info(f"总收益率: ({maybe_profit1}% - {maybe_profit2}%)")
         if self.file:
@@ -252,28 +205,14 @@ class Tester(object):
                     "unknown_surplus_rate": f"+{unknown_surplus_rate}%",
                     "total_profit_rate": f"{maybe_profit1}% - {maybe_profit2}%",
                     "orders": {
-                        "stop_loss": [
-                            order.model_dump_for_report()
-                            for order in self._loss_orders
-                        ],
-                        "stop_surplus": [
-                            order.model_dump_for_report()
-                            for order in self._surplus_orders
-                        ],
-                        "unknown": [
-                            order.model_dump_for_report()
-                            for order in self._unknown_orders
-                        ],
-                        "open": [
-                            order.model_dump_for_report()
-                            for order in self._opened_orders
-                        ],
+                        "stop_loss": [order.model_dump_for_report() for order in self._loss_orders],
+                        "stop_surplus": [order.model_dump_for_report() for order in self._surplus_orders],
+                        "unknown": [order.model_dump_for_report() for order in self._unknown_orders],
+                        "open": [order.model_dump_for_report() for order in self._opened_orders],
                     },
                 }
                 json.dump(data, fp, ensure_ascii=False)
-                logger.info(
-                    f"save backtesting detail at {self.file.absolute()}"
-                )
+                logger.info(f"save backtesting detail at {self.file.absolute()}")
 
     async def resolve(self, klines: list[KLine]):
         order_block_parser = OrderBlockParser(timeframe=self.timeframe)
@@ -318,9 +257,7 @@ class Tester(object):
                 entry_kline=test_kline,
                 entry_price=kline.highest_price,
                 stop_loss_price=kline.lowest_price,
-                stop_surplus_price=(
-                    kline.highest_price + profit_rate * kline.delta_price
-                ),
+                stop_surplus_price=(kline.highest_price + profit_rate * kline.delta_price),
             )
         else:
             order_item = OrderItem(
@@ -328,9 +265,7 @@ class Tester(object):
                 entry_kline=test_kline,
                 entry_price=kline.lowest_price,
                 stop_loss_price=kline.highest_price,
-                stop_surplus_price=(
-                    kline.lowest_price - profit_rate * kline.delta_price
-                ),
+                stop_surplus_price=(kline.lowest_price - profit_rate * kline.delta_price),
             )
         self._opened_orders.append(order_item)
 
@@ -363,12 +298,8 @@ class Tester(object):
             side = order.order_block.side
             if kline.opening_time == order.entry_kline.opening_time:
                 # 入场k就触发了止盈, 这种不可以保证一定是止盈
-                if (
-                    side == "long"
-                    and kline.closing_price >= order.stop_surplus_price
-                ) or (
-                    side == "short"
-                    and kline.closing_price <= order.stop_surplus_price
+                if (side == "long" and kline.closing_price >= order.stop_surplus_price) or (
+                    side == "short" and kline.closing_price <= order.stop_surplus_price
                 ):
                     # 如果收盘价格是止盈, 那么一定是止盈的
                     return TriggerType.surplus
@@ -379,27 +310,19 @@ class Tester(object):
         else:
             return TriggerType.none
 
-    def _process_1m_trigger(
-        self, order: OrderItem, entry_kline: KLine
-    ) -> TriggerType:
+    def _process_1m_trigger(self, order: OrderItem, entry_kline: KLine) -> TriggerType:
         # 是否入场
         is_entry = False
         klines = self.get_kline_1m_detail(entry_kline.opening_time)
         for kline in klines:
             first_entry = False
             if not is_entry:
-                is_entry = (
-                    kline.lowest_price
-                    <= order.entry_price
-                    <= kline.highest_price
-                )
+                is_entry = kline.lowest_price <= order.entry_price <= kline.highest_price
                 if not is_entry:
                     continue
                 first_entry = True
 
-            hit_surplus, hit_loss = self._parse_surplus_and_loss_hit(
-                order, kline
-            )
+            hit_surplus, hit_loss = self._parse_surplus_and_loss_hit(order, kline)
             if hit_surplus and hit_loss:
                 # 1分钟k也出现了同时止盈止损, 确定无法分辨
                 order.trigger_kline = kline

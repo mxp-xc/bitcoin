@@ -17,11 +17,11 @@ def _test():
         symbol="BTC/USDT:USDT",  # 交易对
         timeframe="30m",  # 时间框架
         position_strategy={  # 仓位策略,
-            'strategy': 'elasticity',  # 简单策略
-            'kwargs': {
-                'base_total_usdt': 100,  # 固定5u, 会计算杠杆
-                'base_usdt': 2  # 固定5u, 会计算杠杆
-            }
+            "strategy": "elasticity",  # 简单策略
+            "kwargs": {
+                "base_total_usdt": 100,  # 固定5u, 会计算杠杆
+                "base_usdt": 2,  # 固定5u, 会计算杠杆
+            },
         },
         min_fvg_percent=0.1,  # 第一个fvg需要满足的最小值比例. 默认为0
         min_order_block_kline_undulate_percent=0.2,  # 要做的最小的订单块振幅.
@@ -30,31 +30,20 @@ def _test():
 
 
 async def main():
-    async with settings.create_async_exchange() as exchange:
+    async with settings.exchange.create_async_exchange() as exchange:
         options = [
             CustomRunnerOptions(
                 symbol="BTC/USDT:USDT",
                 timeframe="30m",
-                position_strategy={
-                    'strategy': 'elasticity',
-                    'kwargs': {
-                        'base_total_usdt': 66,
-                        'base_usdt': 1
-                    }
-                },
-                break_even_strategy={
-                    'strategy': 'loss_price_base',
-                    'kwargs': {
-                        'percent': 0.9
-                    }
-                },
+                position_strategy={"strategy": "elasticity", "kwargs": {"base_total_usdt": 66, "base_usdt": 1}},
+                break_even_strategy={"strategy": "loss_price_base", "kwargs": {"percent": 0.9}},
                 runner_class=BTCRunner,
                 first_min_fvg_percent=0.089,
                 min_order_block_kline_undulate_percent=0.2,  # 最小振幅
                 max_order_block_kline_undulate_percent=1.5,  # 最大振幅
                 init_kwargs={
                     "middle_entry_undulate": 0.7,  # 中位入场的最低振幅
-                }
+                },
             )
         ]
         rm = RunnerManager(options, exchange, "USDT-FUTURES")
@@ -64,5 +53,5 @@ async def main():
             logger.exception("Failed to run script.py")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     asyncio.run(main())

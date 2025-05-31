@@ -53,14 +53,11 @@ class RSIWatcher(object):
         # 是否一直处于穿过状态
         prev_rsi_status: RSIStatus | None = None
         first_log = False
-        async for wrapper in self._watcher.async_iter(
-            self.symbol, self.timeframe
-        ):
+        async for wrapper in self._watcher.async_iter(self.symbol, self.timeframe):
             if not wrapper.closed:
                 if not first_log and not wrapper.initialize:
                     logger.info(
-                        f"({self.symbol} - {self.timeframe} - {wrapper.kline.opening_time}) "
-                        f"最新 {prev_rsi_status}"
+                        f"({self.symbol} - {self.timeframe} - {wrapper.kline.opening_time}) 最新 {prev_rsi_status}"
                     )
                     first_log = True
                 continue
@@ -93,25 +90,17 @@ class RSIWatcher(object):
     async def _process_rsi_status(self, context: RSIProcessContext):
         prev_rsi_status = context.prev_rsi_status
         current_rsi_status = context.current_rsi_status
-        assert prev_rsi_status, (
-            f"prev_rsi_status: {prev_rsi_status} must not be None"
-        )
-        assert current_rsi_status, (
-            f"prev_rsi_status: {current_rsi_status} must not be None"
-        )
+        assert prev_rsi_status, f"prev_rsi_status: {prev_rsi_status} must not be None"
+        assert current_rsi_status, f"prev_rsi_status: {current_rsi_status} must not be None"
 
         if prev_rsi_status == current_rsi_status:  # 没有变化不处理
             return
         if prev_rsi_status == RSIStatus.normal:
             # 出现超买或者超卖
-            await self._log_rsi_status(
-                f"出现{current_rsi_status.desc_cn()}", context
-            )
+            await self._log_rsi_status(f"出现{current_rsi_status.desc_cn()}", context)
         else:
             # 超买或者超卖回归正常
-            await self._log_rsi_status(
-                f"{prev_rsi_status.desc_cn()}回归正常", context
-            )
+            await self._log_rsi_status(f"{prev_rsi_status.desc_cn()}回归正常", context)
 
     async def _log_rsi_status(
         self,
@@ -147,7 +136,7 @@ class RSIWatcherManger(object):
 
     async def watch(self):
         rsi_watchers = []
-        async with settings.create_async_exchange_public("bitget") as exchange:
+        async with settings.exchange.create_async_exchange_public("bitget") as exchange:
             kline_watcher = KLineWatcher(exchange)
             await exchange.load_markets()
             for symbol in self.symbols:
@@ -161,10 +150,7 @@ class RSIWatcherManger(object):
                         wx_key=self.wx_key,
                     )
                     rsi_watchers.append(rsi_watcher)
-        symbol_time_frames = (
-            f"{watcher.symbol} - {watcher.timeframe}"
-            for watcher in rsi_watchers
-        )
+        symbol_time_frames = (f"{watcher.symbol} - {watcher.timeframe}" for watcher in rsi_watchers)
         message = f"collect rsi watcher:\n{'\n'.join(symbol_time_frames)}"
         logger.info(message)
         if self.wx_key:

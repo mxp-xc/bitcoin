@@ -65,52 +65,36 @@ class EMAWatcher(BaseWatcher):
     async def watch(self):
         # 是否一直处于穿过状态
         prev_wrapper: KLineWrapper | None = None
-        async for wrapper in self.kline_watcher.async_iter(
-            self.symbol, self.timeframe
-        ):
+        async for wrapper in self.kline_watcher.async_iter(self.symbol, self.timeframe):
             kline = wrapper.kline
             self._ema_add(kline.closing_price)
             if prev_wrapper and self._available():
-                await self._process(
-                    prev_wrapper.kline, kline, _initialize=wrapper.initialize
-                )
+                await self._process(prev_wrapper.kline, kline, _initialize=wrapper.initialize)
 
             self._remove_indicator(wrapper)
             prev_wrapper = wrapper
 
-    async def _process(
-        self, prev_kline: KLine, kline: KLine, _initialize: bool
-    ):
+    async def _process(self, prev_kline: KLine, kline: KLine, _initialize: bool):
         if prev_kline.closing_price == kline.closing_price:
             # 价格没有变化不处理
             return
         ema60, ema200 = self.ema60[-1], self.ema200[-1]
         if utils.format_datetime(kline.opening_time) == "2025-05-03 13:04:00":
             print(kline)
-        cross_type = _resolve_cross(
-            ema200, prev_kline.closing_price, kline.closing_price
-        )
+        cross_type = _resolve_cross(ema200, prev_kline.closing_price, kline.closing_price)
 
         if cross_type == CrossType.above:
-            await self._send_wx(
-                kline.opening_time, "价格上穿ema200", _initialize=_initialize
-            )
+            await self._send_wx(kline.opening_time, "价格上穿ema200", _initialize=_initialize)
         elif cross_type == CrossType.below:
-            await self._send_wx(
-                kline.opening_time, "价格下穿ema200", _initialize=_initialize
-            )
+            await self._send_wx(kline.opening_time, "价格下穿ema200", _initialize=_initialize)
 
         prev_ema60 = self.ema60[-2]
 
         cross_type = _resolve_cross(ema200, prev_ema60, ema60)
         if cross_type == CrossType.above:
-            await self._send_wx(
-                kline.opening_time, "ema60上穿ema200", _initialize=_initialize
-            )
+            await self._send_wx(kline.opening_time, "ema60上穿ema200", _initialize=_initialize)
         elif cross_type == CrossType.below:
-            await self._send_wx(
-                kline.opening_time, "ema60下穿ema200", _initialize=_initialize
-            )
+            await self._send_wx(kline.opening_time, "ema60下穿ema200", _initialize=_initialize)
 
     async def _send_wx(
         self,
@@ -130,7 +114,7 @@ class EMAWatcher(BaseWatcher):
 
 class EMAWatcherManger(WatcherManager):
     def create_exchange(self) -> Exchange:
-        return settings.create_async_exchange_public("bitget")
+        return settings.exchange.create_async_exchange_public("bitget")
 
     def create_watcher(
         self,

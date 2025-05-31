@@ -48,12 +48,7 @@ class KLineWatcher(object):
         initialize = await self._watch_klines(
             symbol,
             timeframe,
-            since=int(
-                (
-                    datetime.datetime.now() - datetime.timedelta(days=1)
-                ).timestamp()
-                * 100
-            ),
+            since=int((datetime.datetime.now() - datetime.timedelta(days=1)).timestamp() * 100),
             *args,
             **kwargs,
         )
@@ -63,39 +58,27 @@ class KLineWatcher(object):
 
         logger.info(f"start watch klines for `{symbol} - {timeframe}`")
         while True:
-            klines = await self._watch_klines(
-                symbol, timeframe, *args, **kwargs
-            )
+            klines = await self._watch_klines(symbol, timeframe, *args, **kwargs)
             for kline in klines:
                 closed = kline.opening_time > prev_kline.opening_time
-                yield KLineWrapper(
-                    kline=prev_kline, closed=closed, initialize=False
-                )
+                yield KLineWrapper(kline=prev_kline, closed=closed, initialize=False)
                 prev_kline = kline
 
-    async def _watch_klines(
-        self, symbol, timeframe, *args, **kwargs
-    ) -> list[KLine] | None:
+    async def _watch_klines(self, symbol, timeframe, *args, **kwargs) -> list[KLine] | None:
         exception = None
         for i in range(self.max_attempts):
             try:
                 return [
                     KLine.from_ccxt(ohlcv)
-                    for ohlcv in await self.exchange.watch_ohlcv(
-                        symbol, timeframe=timeframe, *args, **kwargs
-                    )
+                    for ohlcv in await self.exchange.watch_ohlcv(symbol, timeframe=timeframe, *args, **kwargs)
                 ]
             except Exception as exc:
                 exception = exc
-                logger.exception(
-                    f"Failed to watch_ohlcv. : {exc!s} retry: {i}"
-                )
+                logger.exception(f"Failed to watch_ohlcv. : {exc!s} retry: {i}")
                 await asyncio.sleep(self._retry_interval)
                 continue
         if exception:
-            raise MaxWatchRetry(
-                "Failed to watch ohlcv. max retry"
-            ) from exception
+            raise MaxWatchRetry("Failed to watch ohlcv. max retry") from exception
         return None
 
 
@@ -108,11 +91,7 @@ class _BaseOrderParser(object):
         """下一根k线的收盘时间"""
         last_kline = self.get_last_parse_kline()
         if last_kline:
-            return (
-                last_kline.opening_time
-                + self._delta
-                - datetime.timedelta(seconds=1)
-            )
+            return last_kline.opening_time + self._delta - datetime.timedelta(seconds=1)
         return None
 
     def get_last_parse_kline(self) -> KLine | None:
@@ -138,20 +117,10 @@ class _BaseOrderParser(object):
         return True
 
     def _parse(self, k1: KLine, k2: KLine, k3: KLine) -> PositionSide | None:  # noqa
-        if (
-            k2.entity_highest_price
-            >= k1.lowest_price
-            > k3.highest_price
-            >= k2.entity_lowest_price
-        ):
+        if k2.entity_highest_price >= k1.lowest_price > k3.highest_price >= k2.entity_lowest_price:
             return "short"
 
-        if (
-            k2.entity_lowest_price
-            <= k1.highest_price
-            < k3.lowest_price
-            <= k2.entity_highest_price
-        ):
+        if k2.entity_lowest_price <= k1.highest_price < k3.lowest_price <= k2.entity_highest_price:
             return "long"
         return None
 
@@ -162,9 +131,7 @@ class OrderBlockParser(_BaseOrderParser):
         timeframe: str,
         merge: bool = False,
     ):
-        self._delta = datetime.timedelta(
-            seconds=Exchange.parse_timeframe(timeframe)
-        )
+        self._delta = datetime.timedelta(seconds=Exchange.parse_timeframe(timeframe))
         self.options = Options(merge=merge)
         self.order_blocks: OrderedDict[str, OrderBlock] = OrderedDict()
         self.tested_order_blocks: dict[str, OrderBlock] = OrderedDict()
@@ -197,13 +164,9 @@ class OrderBlockParser(_BaseOrderParser):
             self._current_order_block.klines.append(kline)
             result.update_order_block = self._current_order_block
         else:
-            order_block = self._current_order_block = OrderBlock(
-                klines=list(self._buffer), side=direction
-            )
+            order_block = self._current_order_block = OrderBlock(klines=list(self._buffer), side=direction)
 
-            self.order_blocks[
-                utils.format_datetime(order_block.start_datetime)
-            ] = order_block
+            self.order_blocks[utils.format_datetime(order_block.start_datetime)] = order_block
             result.order_block = order_block
         self._merge_order_block()
         return result
@@ -231,13 +194,8 @@ class OrderBlockParser(_BaseOrderParser):
 
 
 async def main():
-    async with settings.create_async_exchange() as exchange:
-        klines = [
-            KLine.from_ccxt(kl_)
-            for kl_ in await exchange.fetch_ohlcv(
-                "BTC/USDT:USDT", "30m", limit=1000
-            )
-        ]
+    async with settings.exchange.create_async_exchange() as exchange:
+        klines = [KLine.from_ccxt(kl_) for kl_ in await exchange.fetch_ohlcv("BTC/USDT:USDT", "30m", limit=1000)]
         obp = OrderBlockParser("30m")
         for index, kl_ in enumerate(klines):
             result = obp.fetch(kl_)
@@ -249,9 +207,7 @@ async def main():
             if result.update_order_block:
                 logger.info(f"ob延续: {result.update_order_block.desc()}")
             if result.tested_order_blocks:
-                logger.info(
-                    f"ob被测试: {[ob.desc() for ob in result.tested_order_blocks]}"
-                )
+                logger.info(f"ob被测试: {[ob.desc() for ob in result.tested_order_blocks]}")
             logger.info(f"======= {kl_.opening_time} =========\n")
 
         # for ob_ in obp.order_blocks.values():

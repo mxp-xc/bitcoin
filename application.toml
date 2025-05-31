@@ -1,6 +1,6 @@
 #[exchange.proxy]
 #host = "localhost"
-#port = 7899
+#port = 7890
 
 [exchange.api_info.default]
 exchange = "bitget"

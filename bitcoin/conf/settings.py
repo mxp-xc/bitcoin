@@ -5,8 +5,6 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import ccxt as sync_ccxt
-from ccxt import pro as async_ccxt
 from loguru import logger
 from pydantic_settings import (
     BaseSettings,
@@ -16,7 +14,7 @@ from pydantic_settings import (
     YamlConfigSettingsSource,
 )
 
-from .schema import ExchangeApiInfo, ExchangeConfiguration
+from .schema import ExchangeConfiguration
 
 if sys.platform == "win32":
     import asyncio
@@ -66,38 +64,6 @@ class _Settings(BaseSettings):
             settings_cls, init_settings, env_settings, dotenv_settings, file_secret_settings
         ) + (TomlConfigSettingsSource(settings_cls), YamlConfigSettingsSource(settings_cls))
 
-    def create_sync_exchange(self, api_info: ExchangeApiInfo | None = None, **kwargs) -> sync_ccxt.Exchange:
-        return self._create_exchange(sync_ccxt, api_info, **kwargs)
-
-    def create_async_exchange(self, api_info: ExchangeApiInfo | None = None, **kwargs) -> async_ccxt.Exchange:
-        return self._create_exchange(async_ccxt, api_info, **kwargs)
-
-    def create_async_exchange_public(self, exchange: str, **kwargs) -> async_ccxt.Exchange:
-        return self._create_exchange(async_ccxt, ExchangeApiInfo(exchange=exchange), **kwargs)
-
-    def _create_exchange(self, module, api_info: ExchangeApiInfo | None = None, **kwargs):
-        api_info = api_info or self.exchange.get_api_info()
-        assert api_info.exchange in module.exchanges, f"不支持的交易商: {api_info.exchange}"
-        kws: dict[str, Any] = {"options": {"defaultType": "swap", "maxRetriesOnFailure": 3}}
-        if api_info.exchange == "bitget":
-            # 令bitget支持监听1s的频道
-            kws["options"]["timeframes"] = {"1s": "1s"}
-
-        if api_info.api_key:
-            assert api_info.secret and api_info.password
-            kws["apiKey"] = api_info.api_key
-            kws["secret"] = api_info.secret
-            kws["password"] = api_info.password
-
-        proxy = self.exchange.get_proxy_http_base_url()
-        if proxy:
-            kws["https_proxy"] = proxy
-            kws["ws_proxy"] = proxy
-
-        kws.update(kwargs)
-        exchange = getattr(module, api_info.exchange)(kws)
-        return exchange
-
     def model_post_init(self, context: Any, /) -> None:
         self._config_logger()
         proxy = self.exchange.get_proxy_http_base_url()
@@ -118,7 +84,7 @@ class _Settings(BaseSettings):
             format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
             level="DEBUG",
             rotation="30 MB",  # 当文件大小达到 10MB 时，自动创建新的日志文件
-            retention="90 days",  # 保留最近 7 天的日志文件
+            retention="7 days",  # 保留最近 7 天的日志文件
             compression="zip",  # 压缩旧的日志文件为 zip 格式
         )
 

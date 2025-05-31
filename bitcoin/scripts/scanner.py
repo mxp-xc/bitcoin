@@ -83,9 +83,7 @@ class Runner(object):
     async def run(self):
         await self.exchange.load_markets()
         swap_coin: dict[str, MarketInterface] = {
-            symbol: item
-            for symbol, item in self.exchange.markets.items()
-            if item["type"] == "swap" and item["active"]
+            symbol: item for symbol, item in self.exchange.markets.items() if item["type"] == "swap" and item["active"]
         }
         items = list(swap_coin.items())
         # process = iter(tqdm.tqdm(items))
@@ -105,10 +103,7 @@ class Runner(object):
         prev_pen = pen_result.pens[-2]
         prev_top_fractal_kline = prev_pen.start.fractal_kline
         top_fractal_kline = last_pen.end.fractal_kline
-        if (
-            top_fractal_kline.highest_price
-            > prev_top_fractal_kline.highest_price
-        ):
+        if top_fractal_kline.highest_price > prev_top_fractal_kline.highest_price:
             print(f"{symbol} 在{top_fractal_kline.opening_time}突破回踩")
 
     async def _get_klines(self, symbol: str) -> list[KLine]:
@@ -147,7 +142,7 @@ class Runner(object):
 async def run_main():
     """创建一个只使用"""
     # 配置一个至少拥有行情权限的api账号
-    async with settings.create_async_exchange_public("binance") as exchange:
+    async with settings.exchange.create_async_exchange_public("binance") as exchange:
         await Runner(exchange, "1d", concurrent=3).run()
         # await Scanner(exchange, "FET/USDT:USDT").scan()
 

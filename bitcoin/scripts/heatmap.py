@@ -1,6 +1,5 @@
 import asyncio
 import datetime
-import os
 from collections import defaultdict
 
 import aiohttp
@@ -47,9 +46,7 @@ class HeatmapWatcher(object):
         asyncio.create_task(self._refresh_heatmap_forever(60))
         time_seen: dict[datetime.datetime, set[str]] = defaultdict(set)
         heatmap_refresh_retry = 0
-        async for wrapper in kline_watcher.async_iter(
-            symbol="BTC/USDT:USDT", timeframe="1m"
-        ):
+        async for wrapper in kline_watcher.async_iter(symbol="BTC/USDT:USDT", timeframe="1m"):
             if self._stopping:
                 break
             if wrapper.initialize:
@@ -86,11 +83,7 @@ class HeatmapWatcher(object):
                 ("short", heatmap.short),
             ):
                 for index, (price, size) in enumerate(price_size):
-                    if (
-                        size < self.threshold
-                        or price < kline.lowest_price
-                        or price > kline.highest_price
-                    ):
+                    if size < self.threshold or price < kline.lowest_price or price > kline.highest_price:
                         continue
                     key = f"{side}-{price}"
                     if key in seen:
@@ -125,9 +118,7 @@ class HeatmapWatcher(object):
                 break
         else:
             logger.warning(f"没有找到收线对应的heatmap: {kline}")
-            await log_and_send_wx_message(
-                f"{kline_time}收线, 成交量: {kline.volume}", key=self._wx_key
-            )
+            await log_and_send_wx_message(f"{kline_time}收线, 成交量: {kline.volume}", key=self._wx_key)
             return
 
         seen: dict[str, float] = {}
@@ -136,11 +127,7 @@ class HeatmapWatcher(object):
             ("short", heatmap.short),
         ):
             for index, (price, size) in enumerate(price_size):
-                if (
-                    size < self.threshold
-                    or price < kline.lowest_price
-                    or price > kline.highest_price
-                ):
+                if size < self.threshold or price < kline.lowest_price or price > kline.highest_price:
                     continue
                 key = f"{side}-{price}"
                 seen[key] = size
@@ -174,10 +161,8 @@ class HeatmapWatcher(object):
 
     async def run(self):
         async with (
-            aiohttp.ClientSession(
-                connector=aiohttp.TCPConnector(verify_ssl=False)
-            ) as self.session,
-            settings.create_async_exchange_public("binance") as self.exchange,
+            aiohttp.ClientSession(connector=aiohttp.TCPConnector(verify_ssl=False)) as self.session,
+            settings.exchange.create_async_exchange_public("binance") as self.exchange,
         ):
             try:
                 await self._run()
@@ -188,9 +173,7 @@ class HeatmapWatcher(object):
                     level="exception",
                 )
             finally:
-                await log_and_send_wx_message(
-                    "stop heatmap bot", key=self._wx_key
-                )
+                await log_and_send_wx_message("stop heatmap bot", key=self._wx_key)
 
     async def _get_heatmaps_with_lock(self):
         async with self._heatmap_lock:

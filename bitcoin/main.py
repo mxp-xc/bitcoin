@@ -46,25 +46,17 @@ class OrderBlockQuery(BaseModel):
 
 @app.exception_handler(Exception)
 def handle_exception(request: Request, exc: Exception):  # noqa
-    return ORJSONResponse(
-        content=Result.failed(str(exc)).model_dump(mode="json")
-    )
+    return ORJSONResponse(content=Result.failed(str(exc)).model_dump(mode="json"))
 
 
 @app.post("/get_order_block")
 async def get_order_block(param: OrderBlockQuery) -> Result[OrderBlockResult]:
     parser = OrderBlockParser(param.timeframe)
-    async with settings.create_async_exchange() as exchange:
+    async with settings.exchange.create_async_exchange() as exchange:
         ohlcv = await exchange.fetch_ohlcv(
             symbol=param.symbol,
             timeframe=param.timeframe,
-            since=int(
-                (
-                    datetime.datetime.now()
-                    - datetime.timedelta(days=param.day)
-                ).timestamp()
-                * 1000
-            ),
+            since=int((datetime.datetime.now() - datetime.timedelta(days=param.day)).timestamp() * 1000),
             params={"until": int(datetime.datetime.now().timestamp() * 1000)},
             limit=1000,
         )
