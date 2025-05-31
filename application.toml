@@ -1,0 +1,9 @@
+#[exchange.proxy]
+#host = "localhost"
+#port = 7899
+
+[exchange.api_info.default]
+exchange = "bitget"
+#api_key = ""
+#secret = ""
+#password = ""

@@ -8,7 +8,11 @@ from bitcoin.entanglement_theory.schema import (
     FractalType,
     Pen,
 )
-from bitcoin.trading.schema.base import GenericKline, KLine, MergedKline
+from bitcoin.trading.schema.base import (
+    GenericKline,
+    KLine,
+    MergedKline,
+)
 
 
 def _parse_fractal(
@@ -77,6 +81,116 @@ class PenParserOptions(BaseModel):
     """
 
 
+def _create_empty_pen(fractal: Fractal) -> Pen:
+    assert fractal.k3
+    return Pen(
+        start=fractal,
+        middle=[fractal.k2, fractal.k3],
+        end=Fractal(
+            type=fractal.type.mutex(),
+            k1=fractal.k2,
+            k2=fractal.k3,
+            k3=None,
+        ),
+    )
+
+
+class _BasePenResolver(object):
+    def __init__(self, options: PenParserOptions | None = None):
+        self.klines: list[GenericKline] = []
+        self.direction: Direction | None = None
+        self.pens = []
+        self.current_pen: Pen | None = None
+        self.options = options
+
+    def update(self, kline: KLine):
+        if self.direction is None and len(self.klines) <= 2:
+            # 1. k线没有超过3根(无法分辨分形)
+            # 2. 没有包含方向(无法包含, 分形的出现, 一定会有方向)
+            self._append_kline(kline)
+            return
+        self._update(kline)
+
+    def _append_kline(self, kline: GenericKline):
+        self.klines.append(kline)
+        if len(self.klines) <= 1:
+            return
+        prev = self.klines[-1]
+        if (
+            kline.highest_price >= prev.highest_price
+            and kline.lowest_price <= prev.lowest_price
+        ):
+            # 两种情况, 都不修改原来的方向
+            # 1. 有方向, 但是两根k的高点和低点相等
+            # 2. 初始化的情况, 初始化没有方向, 就没有合并
+            # 可能出现高点更高, 低点更低
+            return
+        elif kline.highest_price >= prev.highest_price:
+            self.direction = Direction.up
+        else:
+            assert kline.lowest_price <= prev.lowest_price
+            self.direction = Direction.down
+
+    def _update(self, kline: GenericKline):
+        raise NotImplementedError
+
+    def _merge_kline(
+        self, k1: GenericKline, k2: GenericKline
+    ) -> MergedKline | None:
+        if self._contain_kline(k1, k2) or self._contain_kline(k2, k1):
+            # k1合并k2
+            if isinstance(k1, MergedKline):
+                assert k1.direction == self.direction
+                klines = k1.klines
+            else:
+                klines = [k1]
+            return MergedKline(direction=self.direction, klines=[*klines, k2])
+
+        return None
+
+    @staticmethod
+    def _contain_kline(first: GenericKline, second: GenericKline) -> bool:
+        return (first.highest_price >= second.highest_price) and (
+            first.lowest_price <= second.lowest_price
+        )
+
+
+class _PenResolver(_BasePenResolver):
+    def _update(self, kline: GenericKline):
+        assert self.direction
+        k1, k2 = self.klines[-2:]
+        merged_kline = self._merge_kline(k2, kline)
+        if merged_kline is not None:
+            # 可以合并k线, 就不往后解析了
+            return
+        try:
+            fractal = _parse_fractal(k1, k2, kline)
+            if fractal is None:
+                # 没有出现分型, 笔还在延续
+                return
+            if not self.current_pen:
+                # 初始化场景
+                assert not self.pens
+                self.current_pen = _create_empty_pen(fractal)
+                return
+            current_pen = self.current_pen
+            # 理论上不可能出现同向分型, 因为同向的前提是已经出现了反方向分型
+            assert fractal.type != current_pen.end.type
+
+            if current_pen.end.type == FractalType.top:
+                # 出现了底分型
+                if (
+                    kline.highest_price
+                    >= current_pen.end.fractal_kline.highest_price
+                ):
+                    # 最新k超过了笔起点
+                    pass
+            if len(current_pen.middle) < self.options.min_kline_count:
+                pass
+        finally:
+            self._append_kline(kline)
+
+
 class PenParser(object):
     def __init__(
         self,
@@ -133,7 +247,7 @@ class PenParser(object):
         if current_pen is None:
             # 初始化场景, 第一次出现分型
             assert not self.pens
-            self.current_pen = self._create_empty_pen(fractal)
+            self.current_pen = _create_empty_pen(fractal)
             return
 
         # 如果出现的分型和当前笔的结束分型类型一样, 则可能是当前笔的延长或者无效分型
@@ -149,7 +263,7 @@ class PenParser(object):
                 # 笔确认
                 current_pen.end = fractal
                 self.pens.append(current_pen)
-                self.current_pen = self._create_empty_pen(fractal)
+                self.current_pen = _create_empty_pen(fractal)
         else:
             # 说明分型和起点的k是一样的
             if not self._is_continue(current_pen.start, fractal):
@@ -162,7 +276,7 @@ class PenParser(object):
                     prev_pen.end = fractal
                     prev_pen.middle.pop(-1)
                     prev_pen.middle.extend(current_pen.middle)
-                self.current_pen = self._create_empty_pen(fractal)
+                self.current_pen = _create_empty_pen(fractal)
 
     def print_pen(self):
         for pen in self.pens:
@@ -204,20 +318,6 @@ class PenParser(object):
         ):
             return Direction.down
         return None
-
-    @staticmethod
-    def _create_empty_pen(fractal: Fractal) -> Pen:
-        assert fractal.k3
-        return Pen(
-            start=fractal,
-            middle=[fractal.k2, fractal.k3],
-            end=Fractal(
-                type=fractal.type.mutex(),
-                k1=fractal.k2,
-                k2=fractal.k3,
-                k3=None,
-            ),
-        )
 
     @staticmethod
     def _is_continue(f1: Fractal, f2: Fractal):

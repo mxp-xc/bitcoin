@@ -320,9 +320,9 @@ class LargeOrderWatcher(object):
 
 
 async def run_main():
-    btc_swap_wx_bot_key = os.getenv("BTC_SWAP_WX_BOT_KEY")
+    btc_swap_wx_bot_key = settings.model_extra.get("btc_swap_wx_bot_key")
     if not btc_swap_wx_bot_key:
-        logger.info("not config BTC_SWAP_WX_BOT_KEY")
+        logger.info("not config btc_swap_wx_bot_key")
     swap_watcher = LargeOrderWatcher(
         symbol="BTC:USDT",
         tick=10,

@@ -303,17 +303,24 @@ class Tester(object):
         #         f"{kline.opening_time} tested at {test_kline.opening_time}"
         #     )
         #     return
+        # if order_block.get_fvg_percent()[0] <= 0.08:
+        #     # 小于0.08%的fvg不做
+        #     return
+
         if utils.is_workday(test_kline.opening_time):
             profit_rate = self.profit
         else:
             profit_rate = self.weekday_profit
+        profit_rate *= 100
         if order_block.side == "long":
             order_item = OrderItem(
                 order_block=order_block,
                 entry_kline=test_kline,
                 entry_price=kline.highest_price,
                 stop_loss_price=kline.lowest_price,
-                stop_surplus_price=kline.highest_price * (1 + profit_rate),
+                stop_surplus_price=(
+                    kline.highest_price + profit_rate * kline.delta_price
+                ),
             )
         else:
             order_item = OrderItem(
@@ -321,7 +328,9 @@ class Tester(object):
                 entry_kline=test_kline,
                 entry_price=kline.lowest_price,
                 stop_loss_price=kline.highest_price,
-                stop_surplus_price=kline.lowest_price * (1 - profit_rate),
+                stop_surplus_price=(
+                    kline.lowest_price - profit_rate * kline.delta_price
+                ),
             )
         self._opened_orders.append(order_item)
 
@@ -434,10 +443,10 @@ if __name__ == "__main__":
         "BTC/USDT:USDT",
         timeframe="30m",
         product_type="USDT-FUTURES",
-        profit=1 / 100,
-        weekday_profit=0.5 / 100,
+        profit=1.5 / 100,
+        weekday_profit=1 / 100,
         sides=["long", "short"],  # 方向
-        start="2024-05-04 08:00:00",  # 回测开始时间
+        start="2025-04-04 08:00:00",  # 回测开始时间
         file=backtesting_path / "backtesting.json",
     )
     asyncio.run(tester.run())

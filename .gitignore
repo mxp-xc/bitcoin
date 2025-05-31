@@ -1,14 +1,12 @@
 .venv
 __pycache__
 .idea
-_settings.py
-_dev.py
-test*.py
 identifier.sqlite
 logs
 *.egg-info
 *nohup.out
-script_nohup
 .env
 /backtesting
 /db
+
+application-local.*

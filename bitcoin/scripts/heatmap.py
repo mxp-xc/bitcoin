@@ -253,9 +253,9 @@ class HeatmapWatcher(object):
 
 
 def main():
-    wx_key = os.getenv("HEATMAP_WX_KEY")
+    wx_key = settings.model_extra.get("heatmap_wx_key")
     if not wx_key:
-        logger.info("not config wx key")
+        logger.info("not config heatmap_wx_key")
     watcher = HeatmapWatcher(threshold=200, wx_key=wx_key)
     asyncio.run(watcher.run())
 

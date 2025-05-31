@@ -50,9 +50,7 @@ class Fractal(BaseModel):
         return self.k3 is None
 
     def __str__(self):
-        return (
-            f"Fractal({self.type}, {self.unwrap_fractal_kline.opening_time})"
-        )
+        return f"Fractal({self.type}, {self.unwrap_fractal_kline.opening_time})"
 
     __repr__ = __str__
 
