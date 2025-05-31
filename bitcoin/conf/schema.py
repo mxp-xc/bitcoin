@@ -21,7 +21,7 @@ class ExchangeProxy(BaseModel):
 
 
 class ExchangeConfiguration(BaseModel):
-    proxy: ExchangeProxy | None
+    proxy: ExchangeProxy | None = None
     api_info: dict[str, ExchangeApiInfo]
 
     def get_api_info(self, name: str = DEFAULT_API_INFO_NAME):
